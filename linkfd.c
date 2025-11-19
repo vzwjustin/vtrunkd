@@ -2495,10 +2495,12 @@ int write_buf_check_n_flush(int logical_channel) {
                     if(info.least_rx_seq[logical_channel] > 0 && info.least_rx_seq[logical_channel] != UINT32_MAX) {
                         // now drop everything suspicious
                         int last_idx = missing_resend_buffer(logical_channel, incomplete_seq_buf, &buf_len, info.least_rx_seq[logical_channel]) - 1;
-                        uint32_t last_loss_sqn = incomplete_seq_buf[last_idx];
-                        if(discard_packets(logical_channel, last_loss_sqn) < 0) {
-                            vlog(LOG_ERR, "ERROR merging loss");
-                            return 0;
+                        if(last_idx >= 0) {
+                            uint32_t last_loss_sqn = incomplete_seq_buf[last_idx];
+                            if(discard_packets(logical_channel, last_loss_sqn) < 0) {
+                                vlog(LOG_ERR, "ERROR merging loss");
+                                return 0;
+                            }
                         }
                     }
 
