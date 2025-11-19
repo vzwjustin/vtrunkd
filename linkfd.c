@@ -2000,6 +2000,7 @@ int select_devread_send(char *buf, char *out2) {
     struct timeval tv;
     int new_packet = 0;
     fd_set fdset_tun;
+    FD_ZERO(&fdset_tun);
     int packet_code_ready = 0;
     int current_selection;
     uint32_t local_seq_num_p;
