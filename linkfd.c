@@ -348,8 +348,6 @@ struct timeval socket_timeout = { 10, 0 };
 struct last_sent_packet last_sent_packet_num[MAX_TCP_LOGICAL_CHANNELS]; // initialized by 0 look for memset(..
 
 fd_set fdset, fdset_w, *pfdset_w;
-FD_ZERO(&fdset);
-FD_ZERO(&fdset_w);
 int delay_acc; // accumulated send delay
 int delay_cnt;
 uint32_t my_max_speed_chan;
