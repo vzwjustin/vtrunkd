@@ -1,7 +1,0 @@
-language: c
-addons:
-  apt:
-    packages:
-    - flex
-    - bison
-

@@ -1,0 +1,30 @@
+[package]
+name = "vtrunkd"
+version = "0.3.0"
+edition = "2021"
+authors = ["Vrayo Systems team"]
+description = "Universal network link bonding and multichannel VPN daemon"
+license = "GPL-3.0-or-later"
+homepage = "https://github.com/vzwjustin/vtrunkd"
+repository = "https://github.com/vzwjustin/vtrunkd"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+rand = "0.8"
+nix = "0.26"
+base64 = "0.21"
+boringtun = "0.7.0"
+tun = { version = "0.7.13", features = ["async"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

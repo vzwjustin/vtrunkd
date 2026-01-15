@@ -1,52 +1,62 @@
-[![Build Status](https://travis-ci.org/VrayoSystems/vtrunkd.svg?branch=master)](https://travis-ci.org/VrayoSystems/vtrunkd)
+# vtrunkd - WireGuard multi-link bonding daemon (Rust)
 
-# vtrunkd - universal network link bonding and multichannel VPN.
+vtrunkd is a Rust daemon that bonds multiple UDP paths into a single WireGuard tunnel
+for higher reliability and aggregate throughput.
 
-Copyright (C) 2015-2016 Vrayo Systems team, http://vrayo.com/
+## Build
 
-Vtrunkd is a Linux VPN daemon used to combine several connection paths 
-into one aggregated channel. Features latency, reordering and jitter 
-management, behaviour analysis optimizations for encapsulated protocols, 
-bufferbloat control, packet redundancy, and multiple cpu cores utilization. 
-Up to 30 heterogenous links bonding supported. Used for live streaming, 
-LTE/3G/Wi-Fi link bonding. 32/64-bit, x86, MIPS and ARM supported. 
-Supports python plug-ins for new algorithms implementation. 
+```bash
+cargo build --release
+```
 
+## Configure
 
-## Compilation and Installation:
+Generate a starter config:
 
-In order to compile vtrunkd you need several software packages.
-Required packages: 
-  - Good C compiler (gcc, egcs, etc)
-  - GNU Make (make)
-  - GNU libtool (libtool)
-  - Lexical Analyzer (flex, lex)
-  - YACC (yacc, bison, byacc)
-  - Universal TUN/TAP driver 	http://vtun.sourceforge.net/tun
-  
-On ubuntu, run: 
+```bash
+vtrunkd config --output /etc/vtrunkd.yaml
+```
 
-    $ sudo apt-get install build-essential flex bison
-    $ ./configure --prefix=
-    $ make
-    $ sudo make install
+Example configuration:
 
-## Support
+```yaml
+network:
+  mtu: 1420
+  buffer_size: 65536
+  interface: "utun3" # macOS uses utunX; use tun0 on Linux
+  address: "10.10.0.2"
+  netmask: "255.255.255.0"
 
-If you have any suggestions, ideas, wishes send them to 
+wireguard:
+  private_key: "<base64>"
+  peer_public_key: "<base64>"
+  preshared_key: null
+  persistent_keepalive: 25
+  bonding_mode: "aggregate" # bonding | aggregate | redundant | failover
+  error_backoff_secs: 5
+  health_check_interval_ms: 1000
+  health_check_timeout_ms: 5000
+  links:
+    - name: "wifi"
+      bind: "192.168.1.20:0"
+      endpoint: "vps.example.com:51820"
+      weight: 1
+    - name: "lte"
+      bind: "10.0.0.5:0"
+      endpoint: "vps.example.com:51820"
+      weight: 1
+```
 
-- Andrew Gryaznov 
-   - ag@vrayo.com, 
-   - https://www.linkedin.com/in/grandrew
-- Commercial support available from Vrayo Systems team. 
-   - For more info, please visit http://vrayo.com/support/
-  
-----
+If a link has an `endpoint`, vtrunkd will initiate the handshake on startup. If all
+endpoints are omitted, it waits for incoming traffic. `bonding_mode` controls how data
+is sent across links: `aggregate` (striped/weighted, sums bandwidth), `bonding` (alias
+for aggregate), `redundant` (send on all), or `failover` (highest weight first).
 
-vtrunkd and vtrunkd algorithm (C) Andrew Gryaznov
+Health checks are simple ping/pong messages over the bonding sockets to detect dead
+WANs even when the tunnel is idle. Both sides must run vtrunkd for this to work.
 
-Based on Vtun (C) 1998-2004 Maxim Krasnyansky
+## Run
 
-This product includes software developed by the OpenSSL Project
-for use in the OpenSSL Toolkit. (http://www.openssl.org/).
-Copyright (c) 1998-2004 The OpenSSL Project.  All rights reserved.
+```bash
+sudo ./target/release/vtrunkd --config /etc/vtrunkd.yaml --foreground
+```
