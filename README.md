@@ -51,7 +51,7 @@ wireguard:
       bind: "192.168.1.20:0"
       endpoint: "vps.example.com:51820"
       weight: 1
-    - name: "lte"
+    - name: "lte/5g"
       bind: "10.0.0.5:0"
       endpoint: "vps.example.com:51820"
       weight: 1
