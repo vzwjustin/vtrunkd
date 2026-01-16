@@ -55,6 +55,16 @@ for aggregate), `redundant` (send on all), or `failover` (highest weight first).
 Health checks are simple ping/pong messages over the bonding sockets to detect dead
 WANs even when the tunnel is idle. Both sides must run vtrunkd for this to work.
 
+## Client/server pairing
+
+Both ends must run vtrunkd. It is not a drop-in peer for stock kernel WireGuard.
+
+## Bonding mode guidance
+
+- aggregate/bonding: stripe packets across links; best when RTTs are similar.
+- redundant: send on all links for reliability.
+- failover: highest weight link active; others standby.
+
 ## Run
 
 ```bash

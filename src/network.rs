@@ -40,9 +40,8 @@ impl TunnelDevice {
             configuration.destination(parsed);
         }
 
-        let device = tun::create_as_async(&configuration).map_err(|e| {
-            VtrunkdError::Network(format!("Failed to create TUN device: {}", e))
-        })?;
+        let device = tun::create_as_async(&configuration)
+            .map_err(|e| VtrunkdError::Network(format!("Failed to create TUN device: {}", e)))?;
 
         Ok(TunnelDevice { name, device })
     }

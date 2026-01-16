@@ -1,5 +1,5 @@
-use thiserror::Error;
 use std::io;
+use thiserror::Error;
 
 pub type VtrunkdResult<T> = Result<T, VtrunkdError>;
 
@@ -22,7 +22,6 @@ pub enum VtrunkdError {
 
     #[error("Resource not found: {0}")]
     NotFound(String),
-
 }
 
 impl From<nix::Error> for VtrunkdError {
