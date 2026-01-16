@@ -3,6 +3,16 @@
 vtrunkd is a Rust daemon that bonds multiple UDP paths into a single WireGuard tunnel
 for higher reliability and aggregate throughput.
 
+## Features
+
+- Multi-link bonding over UDP with aggregate/bonding, redundant, and failover modes.
+- Weighted path selection per link.
+- WireGuard tunnel implementation via boringtun.
+- IPv4 and IPv6 endpoints with automatic default bind family selection.
+- Health checks over bonding sockets to detect dead links.
+- Strict YAML config validation to prevent invalid MTU/buffer/timeout settings.
+- Robust handling of malformed traffic and clean shutdown behavior.
+
 ## Build
 
 ```bash
@@ -55,6 +65,12 @@ for aggregate), `redundant` (send on all), or `failover` (highest weight first).
 Health checks are simple ping/pong messages over the bonding sockets to detect dead
 WANs even when the tunnel is idle. Both sides must run vtrunkd for this to work.
 
+## Configuration notes
+
+- `buffer_size` must be at least the `mtu` size.
+- `health_check_timeout_ms` must be greater than `health_check_interval_ms`.
+- If `bind` is omitted, the socket binds to `0.0.0.0:0` or `[::]:0` based on the endpoint family.
+
 ## Client/server pairing
 
 Both ends must run vtrunkd. It is not a drop-in peer for stock kernel WireGuard.
@@ -70,3 +86,29 @@ Both ends must run vtrunkd. It is not a drop-in peer for stock kernel WireGuard.
 ```bash
 sudo ./target/release/vtrunkd --config /etc/vtrunkd.yaml --foreground
 ```
+
+## Testing
+
+```bash
+cargo test
+cargo clippy
+```
+
+Optional dependency scan:
+
+```bash
+cargo install cargo-audit
+cargo audit
+```
+
+## Reports
+
+Repository audit artifacts live in `reports/` (analysis, executive summary, and machine-readable findings).
+
+## Roadmap
+
+- Integration tests with a sandboxed TUN device and packet fixtures.
+- Link health metrics (RTT, downtime, backoff events) and structured logging.
+- Dynamic link reconfiguration without restart.
+- Expanded routing and policy controls per link.
+- Packaging for common service managers (systemd/launchd) and container images.
