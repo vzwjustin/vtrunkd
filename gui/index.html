@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>vtrunkd Control Room</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <div class="halo halo-a"></div>
+    <div class="halo halo-b"></div>
+
+    <main class="shell">
+      <header class="hero" data-animate>
+        <div>
+          <span class="chip">macOS Client + VPS Provisioning</span>
+          <h1>vtrunkd Control Room</h1>
+          <p>
+            Bond multiple WAN links from your Mac to a Linux VPS with a guided setup, key
+            generation, and one-click provisioning.
+          </p>
+        </div>
+        <div class="hero-card">
+          <div class="status-pill" id="run-status">Status: stopped</div>
+          <div class="metric">
+            <span>Tunnel</span>
+            <strong id="tunnel-mode">aggregate</strong>
+          </div>
+          <div class="metric">
+            <span>Links</span>
+            <strong id="link-count">0</strong>
+          </div>
+          <div class="metric">
+            <span>Server</span>
+            <strong id="server-host-display">-</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="grid">
+        <div class="panel" data-animate>
+          <h2>Network</h2>
+          <div class="field">
+            <label>Client interface (macOS)</label>
+            <input id="client-interface" placeholder="utun3" value="utun3" />
+          </div>
+          <div class="field">
+            <label>Client tunnel address</label>
+            <input id="client-address" placeholder="10.10.0.2" value="10.10.0.2" />
+          </div>
+          <div class="field">
+            <label>Server tunnel address</label>
+            <input id="server-address" placeholder="10.10.0.1" value="10.10.0.1" />
+          </div>
+          <div class="field">
+            <label>Netmask</label>
+            <input id="netmask" placeholder="255.255.255.0" value="255.255.255.0" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>MTU</label>
+              <input id="mtu" type="number" min="576" max="65535" value="1420" />
+            </div>
+            <div class="field">
+              <label>Buffer size</label>
+              <input id="buffer-size" type="number" min="1024" value="65536" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Bonding mode</label>
+              <select id="bonding-mode">
+                <option value="aggregate" selected>aggregate</option>
+                <option value="redundant">redundant</option>
+                <option value="failover">failover</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Keepalive (sec)</label>
+              <input id="keepalive" type="number" min="0" value="25" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Health interval (ms)</label>
+              <input id="health-interval" type="number" min="200" value="1000" />
+            </div>
+            <div class="field">
+              <label>Health timeout (ms)</label>
+              <input id="health-timeout" type="number" min="300" value="5000" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Error backoff (sec)</label>
+              <input id="error-backoff" type="number" min="1" value="5" />
+            </div>
+            <div class="field checkbox">
+              <label>
+                <input id="health-enabled" type="checkbox" checked />
+                Enable health checks
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" data-animate>
+          <h2>Client Links</h2>
+          <p class="hint">
+            Bind each link to a local WAN IP. Use the auto-detect button to prefill
+            interface addresses.
+          </p>
+          <div class="toolbar">
+            <button id="detect-links" class="ghost">Auto-detect IPs</button>
+            <button id="add-link" class="ghost">Add link</button>
+          </div>
+          <div id="links" class="links"></div>
+          <template id="link-template">
+            <div class="link-card">
+              <div class="row">
+                <div class="field">
+                  <label>Link name</label>
+                  <input class="link-name" placeholder="wifi" />
+                </div>
+                <div class="field">
+                  <label>Weight</label>
+                  <input class="link-weight" type="number" min="1" value="1" />
+                </div>
+              </div>
+              <div class="row">
+                <div class="field grow">
+                  <label>Bind address</label>
+                  <input class="link-bind" placeholder="192.168.1.20:0" />
+                </div>
+                <button class="danger link-remove">Remove</button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="panel" data-animate>
+          <h2>Server</h2>
+          <div class="field">
+            <label>VPS host</label>
+            <input id="server-host" placeholder="vps.example.com" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Server bind address</label>
+              <input id="server-bind" placeholder="0.0.0.0" value="0.0.0.0" />
+            </div>
+            <div class="field">
+              <label>Base port</label>
+              <input id="server-port" type="number" min="1" max="65535" value="51820" />
+            </div>
+          </div>
+          <div class="divider"></div>
+          <h3>SSH Provisioning</h3>
+          <p class="hint">
+            Use SSH keys and passwordless sudo (or root). The app will install
+            vtrunkd on the VPS if missing, write the config, and optionally create a
+            systemd service.
+          </p>
+          <div class="field">
+            <label>SSH user</label>
+            <input id="ssh-user" placeholder="ubuntu" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>SSH port</label>
+              <input id="ssh-port" type="number" min="1" value="22" />
+            </div>
+            <div class="field">
+              <label>SSH key path</label>
+              <input id="ssh-key" placeholder="/Users/me/.ssh/id_ed25519" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field checkbox">
+              <label>
+                <input id="ssh-root" type="checkbox" />
+                Login as root (no sudo)
+              </label>
+            </div>
+            <div class="field checkbox">
+              <label>
+                <input id="install-service" type="checkbox" checked />
+                Install systemd service
+              </label>
+            </div>
+            <div class="field checkbox">
+              <label>
+                <input id="install-vtrunkd" type="checkbox" checked />
+                Install vtrunkd if missing
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" data-animate>
+          <h2>Generate, Provision, Run</h2>
+          <div class="toolbar">
+            <button id="generate" class="primary">Generate configs</button>
+            <button id="provision" class="primary">Provision VPS</button>
+          </div>
+          <div class="field">
+            <label>Local vtrunkd binary</label>
+            <input id="binary-path" placeholder="/usr/local/bin/vtrunkd" value="/usr/local/bin/vtrunkd" />
+          </div>
+          <div class="toolbar">
+            <button id="start" class="primary">Start tunnel</button>
+            <button id="stop" class="ghost">Stop tunnel</button>
+          </div>
+          <div class="field">
+            <label>Client config (generated)</label>
+            <textarea id="client-config" rows="8" placeholder="Client config will appear here"></textarea>
+          </div>
+          <div class="field">
+            <label>Server config (generated)</label>
+            <textarea id="server-config" rows="8" placeholder="Server config will appear here"></textarea>
+          </div>
+          <div class="field">
+            <label>Key pairs</label>
+            <div class="keys">
+              <div>
+                <span>Client public</span>
+                <code id="client-public">-</code>
+              </div>
+              <div>
+                <span>Server public</span>
+                <code id="server-public">-</code>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Activity log</label>
+            <pre id="log" class="log">Ready.</pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

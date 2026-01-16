@@ -53,7 +53,7 @@ wireguard:
       weight: 1
     - name: "lte/5g"
       bind: "10.0.0.5:0"
-      endpoint: "vps.example.com:51820"
+      endpoint: "vps.example.com:51821"
       weight: 1
 ```
 
@@ -87,6 +87,21 @@ Both ends must run vtrunkd. It is not a drop-in peer for stock kernel WireGuard.
 sudo ./target/release/vtrunkd --config /etc/vtrunkd.yaml --foreground
 ```
 
+## macOS GUI (Control Room)
+
+The desktop app in `gui/` generates client/server configs, provisions a Linux VPS over
+SSH, and runs the client tunnel only while the app is active.
+
+```bash
+cd gui
+npm install
+npm run tauri dev
+```
+
+Notes:
+- SSH provisioning expects key-based auth plus passwordless sudo (or root).
+- The server uses one UDP port per client link (base port + link index).
+
 ## Testing
 
 ```bash
@@ -112,3 +127,4 @@ Repository audit artifacts live in `reports/` (analysis, executive summary, and 
 - Dynamic link reconfiguration without restart.
 - Expanded routing and policy controls per link.
 - Packaging for common service managers (systemd/launchd) and container images.
+- OpenWrt/GL.iNet (Flint 3) packaging and setup guides.
