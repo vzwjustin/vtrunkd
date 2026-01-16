@@ -1,4 +1,6 @@
-use std::net::{IpAddr, SocketAddr};
+use std::future::Future;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -9,7 +11,9 @@ use tokio::net::{lookup_host, UdpSocket};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use crate::config::{Config, WireGuardConfig, WireGuardLinkConfig};
+use crate::config::{
+    BondingMode, Config, WireGuardConfig, WireGuardLinkConfig, DEFAULT_HEALTH_INTERVAL_MS,
+};
 use crate::error::{VtrunkdError, VtrunkdResult};
 use crate::network::TunnelDevice;
 
@@ -19,13 +23,6 @@ const BOND_PING: u8 = 1;
 const BOND_PONG: u8 = 2;
 const BOND_PACKET_LEN: usize = 13;
 const DEFAULT_ERROR_BACKOFF_SECS: u64 = 5;
-
-#[derive(Clone, Copy, Debug)]
-enum BondingMode {
-    Aggregate,
-    Redundant,
-    Failover,
-}
 
 struct Link {
     name: String,
@@ -53,18 +50,36 @@ struct NetPacket {
     data: Vec<u8>,
 }
 
+trait TunnelWriter {
+    fn write_packet<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = VtrunkdResult<()>> + Send + 'a>>;
+}
+
+impl TunnelWriter for TunnelDevice {
+    fn write_packet<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = VtrunkdResult<()>> + Send + 'a>> {
+        Box::pin(async move { TunnelDevice::write_packet(self, data).await })
+    }
+}
+
 pub async fn run(config: Config) -> VtrunkdResult<()> {
     let wg_config = &config.wireguard;
-    let bonding_mode = parse_bonding_mode(wg_config.bonding_mode.as_deref())?;
+    let bonding_mode = wg_config.bonding_mode.unwrap_or_default();
     let error_backoff = Duration::from_secs(
         wg_config
             .error_backoff_secs
             .unwrap_or(DEFAULT_ERROR_BACKOFF_SECS),
     );
-    let health_interval = Duration::from_millis(wg_config.health_check_interval_ms.unwrap_or(1000));
-    let health_timeout = wg_config
-        .health_check_timeout_ms
-        .map(Duration::from_millis);
+    let health_interval = Duration::from_millis(
+        wg_config
+            .health_check_interval_ms
+            .unwrap_or(DEFAULT_HEALTH_INTERVAL_MS),
+    );
+    let health_timeout = wg_config.health_check_timeout_ms.map(Duration::from_millis);
 
     let private_key = decode_key("private_key", &wg_config.private_key)?;
     let peer_public_key = decode_key("peer_public_key", &wg_config.peer_public_key)?;
@@ -189,7 +204,7 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
 
 async fn handle_incoming(
     tunnel: &mut Tunn,
-    device: &TunnelDevice,
+    device: &impl TunnelWriter,
     links: &mut LinkManager,
     out_buf: &mut [u8],
     bond_epoch: Instant,
@@ -218,10 +233,8 @@ async fn handle_incoming(
             }
             TunnResult::Done => return Ok(()),
             TunnResult::Err(e) => {
-                return Err(VtrunkdError::Network(format!(
-                    "WireGuard decapsulate error: {:?}",
-                    e
-                )))
+                warn!("WireGuard decapsulate error: {:?}", e);
+                return Ok(());
             }
         }
     }
@@ -322,19 +335,25 @@ async fn setup_links(
 async fn create_link_socket(
     link_config: &WireGuardLinkConfig,
 ) -> VtrunkdResult<(UdpSocket, Option<SocketAddr>)> {
-    let bind_addr = link_config
-        .bind
-        .as_deref()
-        .unwrap_or("0.0.0.0:0");
-    let bind_addr = parse_bind_addr(bind_addr)?;
-    let socket = UdpSocket::bind(bind_addr).await?;
-
     let remote = match &link_config.endpoint {
         Some(endpoint) => Some(resolve_endpoint(endpoint).await?),
         None => None,
     };
 
+    let bind_addr = match link_config.bind.as_deref() {
+        Some(value) => parse_bind_addr(value)?,
+        None => default_bind_addr(remote),
+    };
+    let socket = UdpSocket::bind(bind_addr).await?;
+
     Ok((socket, remote))
+}
+
+fn default_bind_addr(remote: Option<SocketAddr>) -> SocketAddr {
+    match remote {
+        Some(SocketAddr::V6(_)) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
+        _ => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+    }
 }
 
 fn parse_bind_addr(value: &str) -> VtrunkdResult<SocketAddr> {
@@ -361,9 +380,9 @@ async fn resolve_endpoint(value: &str) -> VtrunkdResult<SocketAddr> {
         .await
         .map_err(|e| VtrunkdError::InvalidConfig(format!("Failed to resolve {}: {}", value, e)))?;
 
-    resolved.next().ok_or_else(|| {
-        VtrunkdError::InvalidConfig(format!("No addresses resolved for {}", value))
-    })
+    resolved
+        .next()
+        .ok_or_else(|| VtrunkdError::InvalidConfig(format!("No addresses resolved for {}", value)))
 }
 
 fn decode_key(label: &str, value: &str) -> VtrunkdResult<[u8; 32]> {
@@ -402,20 +421,6 @@ fn parse_control_packet(data: &[u8]) -> Option<(u8, u64)> {
     Some((message_type, token))
 }
 
-fn parse_bonding_mode(value: Option<&str>) -> VtrunkdResult<BondingMode> {
-    match value.map(|mode| mode.to_ascii_lowercase()) {
-        None => Ok(BondingMode::Aggregate),
-        Some(mode) if mode == "aggregate" => Ok(BondingMode::Aggregate),
-        Some(mode) if mode == "redundant" => Ok(BondingMode::Redundant),
-        Some(mode) if mode == "failover" => Ok(BondingMode::Failover),
-        Some(mode) if mode == "bonding" || mode == "bonded" => Ok(BondingMode::Aggregate),
-        Some(mode) => Err(VtrunkdError::InvalidConfig(format!(
-            "Unsupported bonding_mode: {}",
-            mode
-        ))),
-    }
-}
-
 impl Link {
     fn is_available(
         &mut self,
@@ -428,14 +433,26 @@ impl Link {
         }
 
         if let Some(timeout) = health_timeout {
-            if let Some(last_rx) = self.last_rx {
-                if now.duration_since(last_rx) > timeout {
-                    if self.down_since.is_none() {
-                        warn!("WireGuard {} marked down (no rx)", self.name);
+            match (self.last_rx, self.last_ping_sent) {
+                (Some(last_rx), _) => {
+                    if now.duration_since(last_rx) > timeout {
+                        if self.down_since.is_none() {
+                            warn!("WireGuard {} marked down (no rx)", self.name);
+                        }
+                        self.down_since = Some(now);
+                        return false;
                     }
-                    self.down_since = Some(now);
-                    return false;
                 }
+                (None, Some(last_ping)) => {
+                    if now.duration_since(last_ping) > timeout {
+                        if self.down_since.is_none() {
+                            warn!("WireGuard {} marked down (no pong)", self.name);
+                        }
+                        self.down_since = Some(now);
+                        return false;
+                    }
+                }
+                (None, None) => {}
             }
         }
 
@@ -541,7 +558,7 @@ impl LinkManager {
         let packet_type = wg_packet_type(packet);
         let is_keepalive = packet_type == Some(4) && packet.len() == WG_KEEPALIVE_LEN;
         match packet_type {
-            Some(1 | 2 | 3) => self.send_all(packet).await?,
+            Some(1..=3) => self.send_all(packet).await?,
             Some(4) if is_keepalive => self.send_all(packet).await?,
             _ => match self.mode {
                 BondingMode::Aggregate => self.send_round_robin(packet).await?,
@@ -616,8 +633,7 @@ impl LinkManager {
         while attempts < len {
             let index = self.next_index % len;
             let link = &mut self.links[index];
-            if link.weight == 0
-                || !link.is_available(now, self.error_backoff, self.health_timeout)
+            if link.weight == 0 || !link.is_available(now, self.error_backoff, self.health_timeout)
             {
                 self.advance_cursor(len);
                 attempts += 1;
@@ -720,4 +736,137 @@ fn wg_packet_type(packet: &[u8]) -> Option<u32> {
     let mut bytes = [0u8; 4];
     bytes.copy_from_slice(&packet[..4]);
     Some(u32::from_le_bytes(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+    #[test]
+    fn control_packet_round_trip() {
+        let token = 42u64;
+        let packet = build_control_packet(BOND_PING, token);
+        let parsed = parse_control_packet(&packet).expect("parse control packet");
+        assert_eq!(parsed, (BOND_PING, token));
+    }
+
+    #[test]
+    fn control_packet_rejects_bad_magic() {
+        let mut packet = build_control_packet(BOND_PING, 1);
+        packet[0] = b'X';
+        assert!(parse_control_packet(&packet).is_none());
+    }
+
+    #[test]
+    fn decode_key_rejects_wrong_length() {
+        let result = decode_key("test", "AAAA");
+        assert!(matches!(result, Err(VtrunkdError::InvalidConfig(_))));
+    }
+
+    #[test]
+    fn wg_packet_type_reads_le() {
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&3u32.to_le_bytes());
+        packet.extend_from_slice(&[0u8; 8]);
+        assert_eq!(wg_packet_type(&packet), Some(3));
+    }
+
+    #[test]
+    fn parse_bind_addr_accepts_ip_only() {
+        let addr = parse_bind_addr("127.0.0.1").expect("parse bind addr");
+        let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+        assert_eq!(addr, expected);
+    }
+
+    #[test]
+    fn default_bind_addr_prefers_ipv6_for_ipv6_remote() {
+        let remote = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 51820);
+        let bind_addr = default_bind_addr(Some(remote));
+        let expected = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0);
+        assert_eq!(bind_addr, expected);
+    }
+
+    #[tokio::test]
+    async fn link_marks_down_after_missed_pong() {
+        let now = Instant::now();
+        let last_ping = now
+            .checked_sub(Duration::from_secs(10))
+            .expect("instant subtraction");
+        let mut link = Link {
+            name: "link-0".to_string(),
+            socket: Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()),
+            remote: Some("127.0.0.1:12345".parse().unwrap()),
+            weight: 1,
+            down_since: None,
+            last_rx: None,
+            last_ping_sent: Some(last_ping),
+            last_rtt_ms: None,
+        };
+
+        let available = link.is_available(now, Duration::from_secs(1), Some(Duration::from_secs(3)));
+        assert!(!available);
+        assert!(link.down_since.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_incoming_drops_invalid_packet() {
+        struct TestDevice;
+
+        impl TunnelWriter for TestDevice {
+            fn write_packet<'a>(
+                &'a self,
+                _data: &'a [u8],
+            ) -> Pin<Box<dyn Future<Output = VtrunkdResult<()>> + Send + 'a>> {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let mut tunnel = Tunn::new(
+            StaticSecret::from([1u8; 32]),
+            PublicKey::from([2u8; 32]),
+            None,
+            None,
+            1,
+            None,
+        );
+
+        let packet = NetPacket {
+            link_index: 0,
+            src: "127.0.0.1:12345".parse().unwrap(),
+            data: vec![0u8; 1],
+        };
+
+        let mut links = LinkManager {
+            links: Vec::new(),
+            mode: BondingMode::Aggregate,
+            error_backoff: Duration::from_secs(1),
+            health_timeout: None,
+            next_index: 0,
+            remaining_weight: 0,
+        };
+
+        let mut out_buf = vec![0u8; 256];
+        let probe = tunnel.decapsulate(Some(packet.src.ip()), &packet.data, &mut out_buf);
+        assert!(matches!(probe, TunnResult::Err(_)));
+
+        let mut tunnel = Tunn::new(
+            StaticSecret::from([1u8; 32]),
+            PublicKey::from([2u8; 32]),
+            None,
+            None,
+            1,
+            None,
+        );
+        let result = handle_incoming(
+            &mut tunnel,
+            &TestDevice,
+            &mut links,
+            &mut out_buf,
+            Instant::now(),
+            packet,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
 }

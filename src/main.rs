@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
+use std::os::fd::AsRawFd;
+use std::path::PathBuf;
 use tokio::signal;
 use tracing::{error, info};
-use std::path::PathBuf;
-use std::os::fd::AsRawFd;
 
 mod config;
 mod error;
@@ -78,24 +78,46 @@ async fn main() -> VtrunkdResult<()> {
         daemonize()?;
     }
 
-    let run_handle = tokio::spawn(async move {
-        if let Err(e) = wireguard::run(config).await {
-            error!("WireGuard error: {}", e);
-        }
-    });
-
-    signal::ctrl_c().await?;
-    info!("Received shutdown signal");
-
-    run_handle.abort();
-    run_handle.await.ok();
+    if let Err(e) = run_until_shutdown(wireguard::run(config), signal::ctrl_c()).await {
+        error!("WireGuard error: {}", e);
+        return Err(e);
+    }
 
     info!("vtrunkd shutdown complete");
     Ok(())
 }
 
+async fn run_until_shutdown<R, S>(run_fut: R, shutdown: S) -> VtrunkdResult<()>
+where
+    R: std::future::Future<Output = VtrunkdResult<()>> + Send + 'static,
+    S: std::future::Future<Output = std::io::Result<()>> + Send,
+{
+    let mut run_handle = tokio::spawn(run_fut);
+    tokio::select! {
+        result = &mut run_handle => {
+            match result {
+                Ok(Ok(())) => Err(error::VtrunkdError::Network(
+                    "WireGuard task exited unexpectedly".to_string(),
+                )),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(error::VtrunkdError::Network(format!(
+                    "WireGuard task join error: {}",
+                    e
+                ))),
+            }
+        }
+        shutdown_result = shutdown => {
+            shutdown_result?;
+            info!("Received shutdown signal");
+            run_handle.abort();
+            let _ = run_handle.await;
+            Ok(())
+        }
+    }
+}
+
 fn daemonize() -> VtrunkdResult<()> {
-    use nix::unistd::{fork, ForkResult, setsid, chdir, close};
+    use nix::unistd::{chdir, close, fork, setsid, ForkResult};
     use std::fs::File;
 
     match unsafe { fork() }? {
@@ -122,5 +144,34 @@ fn daemonize() -> VtrunkdResult<()> {
 
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn run_until_shutdown_errors_on_run_failure() {
+        let run_fut = async { Err(error::VtrunkdError::Network("boom".to_string())) };
+        let shutdown = std::future::pending::<std::io::Result<()>>();
+        let result = run_until_shutdown(run_fut, shutdown).await;
+        assert!(matches!(result, Err(error::VtrunkdError::Network(_))));
+    }
+
+    #[tokio::test]
+    async fn run_until_shutdown_errors_on_unexpected_exit() {
+        let run_fut = async { Ok(()) };
+        let shutdown = std::future::pending::<std::io::Result<()>>();
+        let result = run_until_shutdown(run_fut, shutdown).await;
+        assert!(matches!(result, Err(error::VtrunkdError::Network(_))));
+    }
+
+    #[tokio::test]
+    async fn run_until_shutdown_returns_ok_on_shutdown() {
+        let run_fut = std::future::pending::<VtrunkdResult<()>>();
+        let shutdown = async { Ok(()) };
+        let result = run_until_shutdown(run_fut, shutdown).await;
+        assert!(result.is_ok());
     }
 }

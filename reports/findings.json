@@ -1,0 +1,115 @@
+{
+  "project": "vtrunkd",
+  "generated": "2026-01-15 18:41 CST",
+  "scan_summary": {
+    "cargo_audit": {
+      "vulnerabilities_found": false,
+      "count": 0
+    }
+  },
+  "findings": [
+    {
+      "bug_id": "VTR-001",
+      "severity": "Critical",
+      "category": "Security/Availability",
+      "component": "WireGuard packet handling",
+      "files": ["src/wireguard.rs:205"],
+      "description": "Malformed UDP payloads caused decapsulation errors that terminated the daemon.",
+      "expected_behavior": "Invalid packets should be dropped and logged without stopping the service.",
+      "root_cause": "handle_incoming treated TunnResult::Err as fatal.",
+      "impact": "Remote unauthenticated DoS on exposed UDP links.",
+      "reproduction": [
+        "Run vtrunkd with an exposed link endpoint.",
+        "Send a 1-byte UDP packet to the link port.",
+        "Observe daemon exits with decapsulate error."
+      ],
+      "fix": "Log and drop invalid packets instead of returning an error.",
+      "verification": [
+        "cargo test (wireguard::tests::handle_incoming_drops_invalid_packet)"
+      ],
+      "status": "fixed"
+    },
+    {
+      "bug_id": "VTR-002",
+      "severity": "High",
+      "category": "Functional/Availability",
+      "component": "Daemon lifecycle",
+      "files": ["src/main.rs:81", "src/main.rs:90"],
+      "description": "If the WireGuard task exits, the main process kept running and waited for Ctrl+C.",
+      "expected_behavior": "Daemon should exit with error when the WireGuard task fails or exits unexpectedly.",
+      "root_cause": "WireGuard task was spawned and not awaited.",
+      "impact": "Silent failure with an idle but still-running process.",
+      "reproduction": [
+        "Run without permissions to create a TUN device.",
+        "Observe WireGuard task error and exit.",
+        "Process continues to wait for Ctrl+C."
+      ],
+      "fix": "Added run_until_shutdown to monitor task completion and propagate errors.",
+      "verification": [
+        "cargo test (tests::run_until_shutdown_*)"
+      ],
+      "status": "fixed"
+    },
+    {
+      "bug_id": "VTR-003",
+      "severity": "Medium",
+      "category": "Functional/Configuration",
+      "component": "Config validation",
+      "files": ["src/config.rs:111"],
+      "description": "Config accepted invalid combinations such as timeout <= default interval, buffer_size < mtu, and mtu > u16::MAX.",
+      "expected_behavior": "Config validation should reject invalid intervals and sizes.",
+      "root_cause": "Validation only compared timeout when interval was explicitly set and did not bound MTU or buffer size.",
+      "impact": "Link flapping, packet truncation, and misconfigured TUN device.",
+      "reproduction": [
+        "Set health_check_timeout_ms to 500 and omit health_check_interval_ms.",
+        "Set buffer_size smaller than mtu.",
+        "Set mtu > 65535."
+      ],
+      "fix": "Validated MTU upper bound, buffer_size >= MTU, and timeout against effective interval.",
+      "verification": [
+        "cargo test (config::tests::validate_config_*)"
+      ],
+      "status": "fixed"
+    },
+    {
+      "bug_id": "VTR-004",
+      "severity": "Medium",
+      "category": "Functional/Integration",
+      "component": "Link health checks",
+      "files": ["src/wireguard.rs:425"],
+      "description": "Links with no RX were never marked down even after repeated health pings.",
+      "expected_behavior": "Mark links down when pings go unanswered beyond timeout.",
+      "root_cause": "is_available only checked last_rx and ignored last_ping_sent.",
+      "impact": "Failover/aggregate modes may keep sending to dead links.",
+      "reproduction": [
+        "Enable health checks on a link with no responding peer.",
+        "Observe link remains available indefinitely."
+      ],
+      "fix": "Consider last_ping_sent when last_rx is absent.",
+      "verification": [
+        "cargo test (wireguard::tests::link_marks_down_after_missed_pong)"
+      ],
+      "status": "fixed"
+    },
+    {
+      "bug_id": "VTR-005",
+      "severity": "Medium",
+      "category": "Integration/Network",
+      "component": "Link socket setup",
+      "files": ["src/wireguard.rs:335"],
+      "description": "IPv6 endpoints defaulted to IPv4 bind address, causing send failures.",
+      "expected_behavior": "Default bind address should match the endpoint IP family.",
+      "root_cause": "Bind selection occurred before endpoint resolution and defaulted to 0.0.0.0:0.",
+      "impact": "IPv6 links fail unless bind is manually set.",
+      "reproduction": [
+        "Configure endpoint as IPv6 without a bind address.",
+        "Observe send errors due to IPv4 socket."
+      ],
+      "fix": "Resolve endpoint first and choose bind address by IP family.",
+      "verification": [
+        "cargo test (wireguard::tests::default_bind_addr_prefers_ipv6_for_ipv6_remote)"
+      ],
+      "status": "fixed"
+    }
+  ]
+}
