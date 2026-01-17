@@ -32,6 +32,26 @@ function renderLinks() {
     bindInput.value = link.bind;
     weightInput.value = link.weight;
 
+    // Accessibility: Associate labels with inputs
+    const nameId = `link-name-${index}`;
+    const weightId = `link-weight-${index}`;
+    const bindId = `link-bind-${index}`;
+
+    nameInput.id = nameId;
+    if (nameInput.previousElementSibling) {
+      nameInput.previousElementSibling.setAttribute('for', nameId);
+    }
+
+    weightInput.id = weightId;
+    if (weightInput.previousElementSibling) {
+      weightInput.previousElementSibling.setAttribute('for', weightId);
+    }
+
+    bindInput.id = bindId;
+    if (bindInput.previousElementSibling) {
+      bindInput.previousElementSibling.setAttribute('for', bindId);
+    }
+
     nameInput.addEventListener('input', (event) => {
       links[index].name = event.target.value;
     });
