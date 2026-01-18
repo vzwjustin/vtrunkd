@@ -319,3 +319,48 @@ button.danger {
     grid-column: span 1;
   }
 }
+
+/* Loading States */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+button.loading {
+  color: transparent !important;
+  position: relative;
+  pointer-events: none;
+  cursor: wait;
+}
+
+button.loading::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  top: 50%;
+  left: 50%;
+  margin-top: -9px;
+  margin-left: -9px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Primary Button Spinner (White on Teal) */
+button.primary.loading::after {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+}
+
+/* Ghost Button Spinner (Teal on Light) */
+button.ghost.loading::after {
+  border-color: rgba(31, 110, 122, 0.2);
+  border-top-color: var(--teal);
+}
+
+/* Danger Button Spinner (Coral on Light) */
+button.danger.loading::after {
+  border-color: rgba(234, 107, 75, 0.2);
+  border-top-color: var(--coral);
+}
