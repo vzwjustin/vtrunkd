@@ -22,7 +22,7 @@
           </p>
         </div>
         <div class="hero-card">
-          <div class="status-pill" id="run-status">Status: stopped</div>
+          <div class="status-pill" id="run-status" role="status" aria-live="polite">Status: stopped</div>
           <div class="metric">
             <span>Tunnel</span>
             <strong id="tunnel-mode">aggregate</strong>
@@ -42,34 +42,34 @@
         <div class="panel" data-animate>
           <h2>Network</h2>
           <div class="field">
-            <label>Client interface (macOS)</label>
+            <label for="client-interface">Client interface (macOS)</label>
             <input id="client-interface" placeholder="utun3" value="utun3" />
           </div>
           <div class="field">
-            <label>Client tunnel address</label>
+            <label for="client-address">Client tunnel address</label>
             <input id="client-address" placeholder="10.10.0.2" value="10.10.0.2" />
           </div>
           <div class="field">
-            <label>Server tunnel address</label>
+            <label for="server-address">Server tunnel address</label>
             <input id="server-address" placeholder="10.10.0.1" value="10.10.0.1" />
           </div>
           <div class="field">
-            <label>Netmask</label>
+            <label for="netmask">Netmask</label>
             <input id="netmask" placeholder="255.255.255.0" value="255.255.255.0" />
           </div>
           <div class="row">
             <div class="field">
-              <label>MTU</label>
+              <label for="mtu">MTU</label>
               <input id="mtu" type="number" min="576" max="65535" value="1420" />
             </div>
             <div class="field">
-              <label>Buffer size</label>
+              <label for="buffer-size">Buffer size</label>
               <input id="buffer-size" type="number" min="1024" value="65536" />
             </div>
           </div>
           <div class="row">
             <div class="field">
-              <label>Bonding mode</label>
+              <label for="bonding-mode">Bonding mode</label>
               <select id="bonding-mode">
                 <option value="aggregate" selected>aggregate</option>
                 <option value="redundant">redundant</option>
@@ -77,23 +77,23 @@
               </select>
             </div>
             <div class="field">
-              <label>Keepalive (sec)</label>
+              <label for="keepalive">Keepalive (sec)</label>
               <input id="keepalive" type="number" min="0" value="25" />
             </div>
           </div>
           <div class="row">
             <div class="field">
-              <label>Health interval (ms)</label>
+              <label for="health-interval">Health interval (ms)</label>
               <input id="health-interval" type="number" min="200" value="1000" />
             </div>
             <div class="field">
-              <label>Health timeout (ms)</label>
+              <label for="health-timeout">Health timeout (ms)</label>
               <input id="health-timeout" type="number" min="300" value="5000" />
             </div>
           </div>
           <div class="row">
             <div class="field">
-              <label>Error backoff (sec)</label>
+              <label for="error-backoff">Error backoff (sec)</label>
               <input id="error-backoff" type="number" min="1" value="5" />
             </div>
             <div class="field checkbox">
@@ -142,16 +142,16 @@
         <div class="panel" data-animate>
           <h2>Server</h2>
           <div class="field">
-            <label>VPS host</label>
+            <label for="server-host">VPS host</label>
             <input id="server-host" placeholder="vps.example.com" />
           </div>
           <div class="row">
             <div class="field">
-              <label>Server bind address</label>
+              <label for="server-bind">Server bind address</label>
               <input id="server-bind" placeholder="0.0.0.0" value="0.0.0.0" />
             </div>
             <div class="field">
-              <label>Base port</label>
+              <label for="server-port">Base port</label>
               <input id="server-port" type="number" min="1" max="65535" value="51820" />
             </div>
           </div>
@@ -163,16 +163,16 @@
             systemd service.
           </p>
           <div class="field">
-            <label>SSH user</label>
+            <label for="ssh-user">SSH user</label>
             <input id="ssh-user" placeholder="ubuntu" />
           </div>
           <div class="row">
             <div class="field">
-              <label>SSH port</label>
+              <label for="ssh-port">SSH port</label>
               <input id="ssh-port" type="number" min="1" value="22" />
             </div>
             <div class="field">
-              <label>SSH key path</label>
+              <label for="ssh-key">SSH key path</label>
               <input id="ssh-key" placeholder="/Users/me/.ssh/id_ed25519" />
             </div>
           </div>
@@ -205,7 +205,7 @@
             <button id="provision" class="primary">Provision VPS</button>
           </div>
           <div class="field">
-            <label>Local vtrunkd binary</label>
+            <label for="binary-path">Local vtrunkd binary</label>
             <input id="binary-path" placeholder="/usr/local/bin/vtrunkd" value="/usr/local/bin/vtrunkd" />
           </div>
           <div class="toolbar">
@@ -213,11 +213,11 @@
             <button id="stop" class="ghost">Stop tunnel</button>
           </div>
           <div class="field">
-            <label>Client config (generated)</label>
+            <label for="client-config">Client config (generated)</label>
             <textarea id="client-config" rows="8" placeholder="Client config will appear here"></textarea>
           </div>
           <div class="field">
-            <label>Server config (generated)</label>
+            <label for="server-config">Server config (generated)</label>
             <textarea id="server-config" rows="8" placeholder="Server config will appear here"></textarea>
           </div>
           <div class="field">
@@ -234,8 +234,8 @@
             </div>
           </div>
           <div class="field">
-            <label>Activity log</label>
-            <pre id="log" class="log">Ready.</pre>
+            <label for="log">Activity log</label>
+            <pre id="log" class="log" role="log" aria-live="polite">Ready.</pre>
           </div>
         </div>
       </section>

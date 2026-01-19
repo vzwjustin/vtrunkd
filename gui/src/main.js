@@ -28,6 +28,26 @@ function renderLinks() {
     const weightInput = clone.querySelector('.link-weight');
     const removeBtn = clone.querySelector('.link-remove');
 
+    // Accessibility: Set unique IDs and label associations
+    const nameId = `link-name-${index}`;
+    const bindId = `link-bind-${index}`;
+    const weightId = `link-weight-${index}`;
+
+    nameInput.id = nameId;
+    if (nameInput.previousElementSibling) {
+      nameInput.previousElementSibling.setAttribute('for', nameId);
+    }
+
+    bindInput.id = bindId;
+    if (bindInput.previousElementSibling) {
+      bindInput.previousElementSibling.setAttribute('for', bindId);
+    }
+
+    weightInput.id = weightId;
+    if (weightInput.previousElementSibling) {
+      weightInput.previousElementSibling.setAttribute('for', weightId);
+    }
+
     nameInput.value = link.name;
     bindInput.value = link.bind;
     weightInput.value = link.weight;
