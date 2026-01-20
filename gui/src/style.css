@@ -319,3 +319,46 @@ button.danger {
     grid-column: span 1;
   }
 }
+
+/* Loading States */
+button.loading {
+  color: transparent !important;
+  cursor: wait;
+  pointer-events: none;
+  position: relative;
+  opacity: 0.85;
+}
+
+button.loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1em;
+  height: 1em;
+  margin-top: -0.5em;
+  margin-left: -0.5em;
+  border: 2px solid var(--ink);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+button.primary.loading::after {
+  border-color: #fff;
+  border-top-color: transparent;
+}
+
+button.ghost.loading::after {
+  border-color: var(--teal);
+  border-top-color: transparent;
+}
+
+button.danger.loading::after {
+  border-color: var(--coral);
+  border-top-color: transparent;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
