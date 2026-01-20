@@ -18,6 +18,20 @@ let links = [
   { name: 'lte/5g', bind: '', weight: 1 }
 ];
 
+function setLoading(btnId, isLoading) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  if (isLoading) {
+    btn.classList.add('loading');
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+  } else {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+  }
+}
+
 function renderLinks() {
   linksContainer.innerHTML = '';
   links.forEach((link, index) => {
@@ -102,10 +116,11 @@ function buildParams() {
 }
 
 async function generateConfigs() {
+  setLoading('generate', true);
   refreshMetrics();
   appendLog('Generating configs...');
-  const params = buildParams();
   try {
+    const params = buildParams();
     const result = await invoke('generate_configs', { params });
     clientConfigEl.value = result.client_yaml;
     serverConfigEl.value = result.server_yaml;
@@ -114,10 +129,13 @@ async function generateConfigs() {
     appendLog('Configs generated.');
   } catch (err) {
     appendLog(`Error: ${err}`);
+  } finally {
+    setLoading('generate', false);
   }
 }
 
 async function provisionVps() {
+  setLoading('provision', true);
   appendLog('Provisioning VPS...');
   const ssh = {
     host: readText('server-host'),
@@ -139,10 +157,13 @@ async function provisionVps() {
     appendLog(output || 'Provisioning complete.');
   } catch (err) {
     appendLog(`Provisioning failed: ${err}`);
+  } finally {
+    setLoading('provision', false);
   }
 }
 
 async function startTunnel() {
+  setLoading('start', true);
   appendLog('Starting tunnel...');
   try {
     const clientYaml = clientConfigEl.value.trim();
@@ -161,10 +182,13 @@ async function startTunnel() {
     appendLog(`Tunnel started using ${configPath}`);
   } catch (err) {
     appendLog(`Start failed: ${err}`);
+  } finally {
+    setLoading('start', false);
   }
 }
 
 async function stopTunnel() {
+  setLoading('stop', true);
   appendLog('Stopping tunnel...');
   try {
     await invoke('stop_vtrunkd');
@@ -173,10 +197,13 @@ async function stopTunnel() {
     appendLog('Tunnel stopped.');
   } catch (err) {
     appendLog(`Stop failed: ${err}`);
+  } finally {
+    setLoading('stop', false);
   }
 }
 
 async function autoDetect() {
+  setLoading('detect-links', true);
   appendLog('Detecting local IPs...');
   try {
     const addresses = await invoke('list_local_addrs');
@@ -194,6 +221,8 @@ async function autoDetect() {
     appendLog(`Detected ${addresses.length} addresses.`);
   } catch (err) {
     appendLog(`Detection failed: ${err}`);
+  } finally {
+    setLoading('detect-links', false);
   }
 }
 
