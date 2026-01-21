@@ -1,0 +1,3 @@
+## 2024-05-22 - Zero-copy Optimization in WireGuard Hot Path
+**Learning:** In async Rust networking code, passing owned `Vec<u8>` to functions that only need `&[u8]` (and don't retain the data) is a common anti-pattern that creates unnecessary heap allocations on the hot path.
+**Action:** Always prefer passing slices `&[u8]` to async I/O functions. Rust's borrow checker (specifically NLL) is smart enough to handle the lifetimes even in complex loops, provided the data isn't needed after the await point. Removing `.to_vec()` calls in `src/wireguard.rs` significantly reduced allocation overhead without compromising safety.
