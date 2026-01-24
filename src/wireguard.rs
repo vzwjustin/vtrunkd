@@ -688,8 +688,8 @@ impl LinkManager {
             Some(remote) => remote,
             None => return false,
         };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
+        // Bolt optimization: Avoid unnecessary Arc::clone on hot path
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
@@ -708,8 +708,8 @@ impl LinkManager {
             Some(remote) => remote,
             None => return false,
         };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
+        // Bolt optimization: Avoid unnecessary Arc::clone on hot path
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
