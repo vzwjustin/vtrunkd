@@ -59,6 +59,21 @@ function appendLog(message) {
   logEl.textContent = trimmed.join('\n');
 }
 
+async function withLoading(elementOrId, asyncFn) {
+  const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
+  if (!el) return;
+
+  el.classList.add('loading');
+  el.disabled = true;
+
+  try {
+    await asyncFn();
+  } finally {
+    el.classList.remove('loading');
+    el.disabled = false;
+  }
+}
+
 function refreshMetrics() {
   const mode = document.getElementById('bonding-mode').value;
   tunnelModeEl.textContent = mode;
@@ -224,13 +239,13 @@ listen('vtrunkd-exit', (event) => {
   document.getElementById(id).addEventListener('input', refreshMetrics);
 });
 
-document.getElementById('generate').addEventListener('click', generateConfigs);
-document.getElementById('provision').addEventListener('click', provisionVps);
-document.getElementById('start').addEventListener('click', startTunnel);
-document.getElementById('stop').addEventListener('click', stopTunnel);
+document.getElementById('generate').addEventListener('click', () => withLoading('generate', generateConfigs));
+document.getElementById('provision').addEventListener('click', () => withLoading('provision', provisionVps));
+document.getElementById('start').addEventListener('click', () => withLoading('start', startTunnel));
+document.getElementById('stop').addEventListener('click', () => withLoading('stop', stopTunnel));
 document.getElementById('add-link').addEventListener('click', () => {
   links.push({ name: 'link', bind: '', weight: 1 });
   renderLinks();
   refreshMetrics();
 });
-document.getElementById('detect-links').addEventListener('click', autoDetect);
+document.getElementById('detect-links').addEventListener('click', () => withLoading('detect-links', autoDetect));
