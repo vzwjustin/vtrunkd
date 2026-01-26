@@ -1,0 +1,3 @@
+## 2025-10-26 - Borrow Checker Safety with Loop Refactoring
+**Learning:** When working with `match` expressions that return references (like `TunnResult`), modifying the variable that produced the reference (e.g., `result`) inside the match loop is problematic because the match arm extends the borrow scope. Using a state variable (e.g., `should_continue`) to defer the modification until after the match block is a robust pattern to satisfy NLL (Non-Lexical Lifetimes) and avoid conflicting borrows.
+**Action:** Always prefer extracting control flow decisions (booleans) from `match` blocks when the next action involves re-borrowing the matched resource.
