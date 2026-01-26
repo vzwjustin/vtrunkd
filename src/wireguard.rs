@@ -147,8 +147,7 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
                 }
                 match tunnel.encapsulate(&tun_buf[..size], &mut out_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        let payload = packet.to_vec();
-                        links.send_packet(&payload).await?;
+                        links.send_packet(packet).await?;
                     }
                     TunnResult::Done => {}
                     TunnResult::Err(e) => {
@@ -180,8 +179,7 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
             _ = wg_timer.tick() => {
                 match tunnel.update_timers(&mut out_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        let payload = packet.to_vec();
-                        links.send_packet(&payload).await?;
+                        links.send_packet(packet).await?;
                     }
                     TunnResult::Done => {}
                     TunnResult::Err(e) => {
@@ -220,22 +218,26 @@ async fn handle_incoming(
     let mut result = tunnel.decapsulate(Some(packet.src.ip()), &packet.data, out_buf);
 
     loop {
-        match result {
+        let should_continue = match result {
             TunnResult::WriteToNetwork(buffer) => {
-                let payload = buffer.to_vec();
-                links.send_packet(&payload).await?;
-                result = tunnel.decapsulate(None, &[], out_buf);
+                links.send_packet(buffer).await?;
+                true
             }
             TunnResult::WriteToTunnelV4(buffer, _) | TunnResult::WriteToTunnelV6(buffer, _) => {
-                let payload = buffer.to_vec();
-                device.write_packet(&payload).await?;
-                return Ok(());
+                device.write_packet(buffer).await?;
+                false
             }
-            TunnResult::Done => return Ok(()),
+            TunnResult::Done => false,
             TunnResult::Err(e) => {
                 warn!("WireGuard decapsulate error: {:?}", e);
-                return Ok(());
+                false
             }
+        };
+
+        if should_continue {
+            result = tunnel.decapsulate(None, &[], out_buf);
+        } else {
+            return Ok(());
         }
     }
 }
@@ -244,8 +246,7 @@ async fn send_handshake(tunnel: &mut Tunn, links: &mut LinkManager) -> VtrunkdRe
     let mut out_buf = vec![0u8; 2048];
     match tunnel.format_handshake_initiation(&mut out_buf, true) {
         TunnResult::WriteToNetwork(packet) => {
-            let payload = packet.to_vec();
-            links.send_packet(&payload).await?;
+            links.send_packet(packet).await?;
         }
         TunnResult::Done => {}
         TunnResult::Err(e) => {
@@ -688,8 +689,7 @@ impl LinkManager {
             Some(remote) => remote,
             None => return false,
         };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
@@ -708,8 +708,7 @@ impl LinkManager {
             Some(remote) => remote,
             None => return false,
         };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
