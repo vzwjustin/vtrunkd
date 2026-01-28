@@ -319,3 +319,39 @@ button.danger {
     grid-column: span 1;
   }
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+button.loading {
+  color: transparent !important;
+  pointer-events: none;
+  position: relative;
+}
+
+button.loading::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  top: 50%;
+  left: 50%;
+  margin-left: -9px;
+  margin-top: -9px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Spinner colors for different button types */
+button.ghost.loading::after {
+  border: 2px solid rgba(31, 110, 122, 0.2);
+  border-top-color: var(--teal);
+}
+
+button.danger.loading::after {
+  border: 2px solid rgba(234, 107, 75, 0.2);
+  border-top-color: var(--coral);
+}

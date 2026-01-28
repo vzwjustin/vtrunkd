@@ -197,6 +197,23 @@ async function autoDetect() {
   }
 }
 
+async function withLoading(btn, asyncFn) {
+  const element = typeof btn === 'string' ? document.getElementById(btn) : btn;
+  if (!element) return;
+
+  element.classList.add('loading');
+  element.disabled = true;
+  element.setAttribute('aria-busy', 'true');
+
+  try {
+    await asyncFn();
+  } finally {
+    element.classList.remove('loading');
+    element.disabled = false;
+    element.setAttribute('aria-busy', 'false');
+  }
+}
+
 function setupAnimations() {
   const elements = document.querySelectorAll('[data-animate]');
   elements.forEach((el, index) => {
@@ -224,13 +241,23 @@ listen('vtrunkd-exit', (event) => {
   document.getElementById(id).addEventListener('input', refreshMetrics);
 });
 
-document.getElementById('generate').addEventListener('click', generateConfigs);
-document.getElementById('provision').addEventListener('click', provisionVps);
-document.getElementById('start').addEventListener('click', startTunnel);
-document.getElementById('stop').addEventListener('click', stopTunnel);
+document
+  .getElementById('generate')
+  .addEventListener('click', (e) => withLoading(e.currentTarget, generateConfigs));
+document
+  .getElementById('provision')
+  .addEventListener('click', (e) => withLoading(e.currentTarget, provisionVps));
+document
+  .getElementById('start')
+  .addEventListener('click', (e) => withLoading(e.currentTarget, startTunnel));
+document
+  .getElementById('stop')
+  .addEventListener('click', (e) => withLoading(e.currentTarget, stopTunnel));
 document.getElementById('add-link').addEventListener('click', () => {
   links.push({ name: 'link', bind: '', weight: 1 });
   renderLinks();
   refreshMetrics();
 });
-document.getElementById('detect-links').addEventListener('click', autoDetect);
+document
+  .getElementById('detect-links')
+  .addEventListener('click', (e) => withLoading(e.currentTarget, autoDetect));
