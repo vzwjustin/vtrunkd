@@ -688,8 +688,9 @@ impl LinkManager {
             Some(remote) => remote,
             None => return false,
         };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
+        // Avoid cloning the Arc<UdpSocket> to minimize atomic overhead.
+        // The socket is kept alive by `self`, and we await the send before borrowing `self` mutably again.
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
@@ -708,8 +709,9 @@ impl LinkManager {
             Some(remote) => remote,
             None => return false,
         };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
+        // Avoid cloning the Arc<UdpSocket> to minimize atomic overhead.
+        // The socket is kept alive by `self`, and we await the send before borrowing `self` mutably again.
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
