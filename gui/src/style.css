@@ -306,6 +306,45 @@ button.danger {
   transform: translateY(0);
 }
 
+button.loading {
+  color: transparent !important;
+  pointer-events: none;
+  position: relative;
+}
+
+button.loading::after {
+  content: "";
+  position: absolute;
+  width: 1em;
+  height: 1em;
+  top: 50%;
+  left: 50%;
+  margin-top: -0.5em;
+  margin-left: -0.5em;
+  border: 2px solid var(--spinner-color, currentColor);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+button.primary.loading {
+  --spinner-color: #fff;
+}
+
+button.ghost.loading {
+  --spinner-color: var(--teal);
+}
+
+button.danger.loading {
+  --spinner-color: var(--coral);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 900px) {
   .hero {
     grid-template-columns: 1fr;
