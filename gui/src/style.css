@@ -319,3 +319,32 @@ button.danger {
     grid-column: span 1;
   }
 }
+
+/* Loading States */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+button.loading {
+  color: transparent !important;
+  pointer-events: none;
+  position: relative;
+}
+
+button.loading::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 9px);
+  left: calc(50% - 9px);
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--teal);
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+button.primary.loading::after {
+  border-color: #fff;
+  border-bottom-color: transparent;
+}
