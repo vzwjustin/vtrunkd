@@ -197,6 +197,27 @@ async function autoDetect() {
   }
 }
 
+/**
+ * Wraps an async function with a loading state on the button.
+ * @param {string} buttonId - The ID of the button to toggle.
+ * @param {Function} asyncFn - The async function to execute.
+ */
+async function withLoading(buttonId, asyncFn) {
+  const btn = document.getElementById(buttonId);
+  if (!btn) return asyncFn();
+
+  try {
+    btn.classList.add('loading');
+    btn.setAttribute('aria-busy', 'true');
+    btn.disabled = true;
+    await asyncFn();
+  } finally {
+    btn.classList.remove('loading');
+    btn.removeAttribute('aria-busy');
+    btn.disabled = false;
+  }
+}
+
 function setupAnimations() {
   const elements = document.querySelectorAll('[data-animate]');
   elements.forEach((el, index) => {
@@ -224,13 +245,13 @@ listen('vtrunkd-exit', (event) => {
   document.getElementById(id).addEventListener('input', refreshMetrics);
 });
 
-document.getElementById('generate').addEventListener('click', generateConfigs);
-document.getElementById('provision').addEventListener('click', provisionVps);
-document.getElementById('start').addEventListener('click', startTunnel);
-document.getElementById('stop').addEventListener('click', stopTunnel);
+document.getElementById('generate').addEventListener('click', () => withLoading('generate', generateConfigs));
+document.getElementById('provision').addEventListener('click', () => withLoading('provision', provisionVps));
+document.getElementById('start').addEventListener('click', () => withLoading('start', startTunnel));
+document.getElementById('stop').addEventListener('click', () => withLoading('stop', stopTunnel));
 document.getElementById('add-link').addEventListener('click', () => {
   links.push({ name: 'link', bind: '', weight: 1 });
   renderLinks();
   refreshMetrics();
 });
-document.getElementById('detect-links').addEventListener('click', autoDetect);
+document.getElementById('detect-links').addEventListener('click', () => withLoading('detect-links', autoDetect));
