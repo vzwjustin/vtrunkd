@@ -1,0 +1,3 @@
+## 2024-10-26 - Avoid Atomic Overhead in Async Hot Paths
+**Learning:** In async Rust methods that take `&mut self`, cloning an `Arc` field (like a socket) just to call an async method on it (like `send_to`) is redundant if the method takes `&self`. The `await` point keeps the immutable borrow active, but as long as we don't need `self` mutably *during* the await or before the future completes, the borrow checker is happy. Removing the `Arc::clone` saves an atomic increment/decrement per packet.
+**Action:** Always check if `Arc::clone` can be replaced by a simple reference `&` in hot paths, especially when the owner (`self`) is already borrowed for the duration.
