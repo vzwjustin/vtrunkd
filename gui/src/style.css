@@ -319,3 +319,29 @@ button.danger {
     grid-column: span 1;
   }
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+button.loading {
+  position: relative;
+  cursor: wait;
+  opacity: 0.8;
+  padding-right: 2.5em;
+  pointer-events: none;
+}
+
+button.loading::after {
+  content: "";
+  position: absolute;
+  right: 1em;
+  top: 50%;
+  width: 1em;
+  height: 1em;
+  margin-top: -0.6em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}

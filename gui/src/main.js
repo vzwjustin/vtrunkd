@@ -75,6 +75,18 @@ function readText(id) {
   return document.getElementById(id).value.trim();
 }
 
+async function withLoading(element, fn) {
+  if (!element) return;
+  element.classList.add('loading');
+  element.disabled = true;
+  try {
+    await fn();
+  } finally {
+    element.classList.remove('loading');
+    element.disabled = false;
+  }
+}
+
 function buildParams() {
   const healthEnabled = document.getElementById('health-enabled').checked;
   return {
@@ -224,13 +236,23 @@ listen('vtrunkd-exit', (event) => {
   document.getElementById(id).addEventListener('input', refreshMetrics);
 });
 
-document.getElementById('generate').addEventListener('click', generateConfigs);
-document.getElementById('provision').addEventListener('click', provisionVps);
-document.getElementById('start').addEventListener('click', startTunnel);
-document.getElementById('stop').addEventListener('click', stopTunnel);
+document.getElementById('generate').addEventListener('click', (e) =>
+  withLoading(e.currentTarget, generateConfigs)
+);
+document.getElementById('provision').addEventListener('click', (e) =>
+  withLoading(e.currentTarget, provisionVps)
+);
+document.getElementById('start').addEventListener('click', (e) =>
+  withLoading(e.currentTarget, startTunnel)
+);
+document.getElementById('stop').addEventListener('click', (e) =>
+  withLoading(e.currentTarget, stopTunnel)
+);
 document.getElementById('add-link').addEventListener('click', () => {
   links.push({ name: 'link', bind: '', weight: 1 });
   renderLinks();
   refreshMetrics();
 });
-document.getElementById('detect-links').addEventListener('click', autoDetect);
+document.getElementById('detect-links').addEventListener('click', (e) =>
+  withLoading(e.currentTarget, autoDetect)
+);
