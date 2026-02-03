@@ -1,0 +1,3 @@
+## 2024-05-23 - Avoid Arc::clone in Async Hot Paths
+**Learning:** In async methods taking `&mut self`, explicit `Arc::clone` for shared resources (like sockets) is often redundant if the resource is only needed for an async operation (like `send_to`). The future returned by the async method will capture the reference, effectively borrowing `self` immutably for the duration of the `await`. This is valid as long as `self` is not needed mutably *concurrently* with the await.
+**Action:** Before cloning an `Arc` to "satisfy the borrow checker" in an async method, check if a simple reference `&resource` works. This saves atomic increments/decrements in hot paths.
