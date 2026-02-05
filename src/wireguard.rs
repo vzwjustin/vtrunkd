@@ -147,8 +147,7 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
                 }
                 match tunnel.encapsulate(&tun_buf[..size], &mut out_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        let payload = packet.to_vec();
-                        links.send_packet(&payload).await?;
+                        links.send_packet(packet).await?;
                     }
                     TunnResult::Done => {}
                     TunnResult::Err(e) => {
@@ -180,8 +179,7 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
             _ = wg_timer.tick() => {
                 match tunnel.update_timers(&mut out_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        let payload = packet.to_vec();
-                        links.send_packet(&payload).await?;
+                        links.send_packet(packet).await?;
                     }
                     TunnResult::Done => {}
                     TunnResult::Err(e) => {
@@ -222,13 +220,11 @@ async fn handle_incoming(
     loop {
         match result {
             TunnResult::WriteToNetwork(buffer) => {
-                let payload = buffer.to_vec();
-                links.send_packet(&payload).await?;
+                links.send_packet(buffer).await?;
                 result = tunnel.decapsulate(None, &[], out_buf);
             }
             TunnResult::WriteToTunnelV4(buffer, _) | TunnResult::WriteToTunnelV6(buffer, _) => {
-                let payload = buffer.to_vec();
-                device.write_packet(&payload).await?;
+                device.write_packet(buffer).await?;
                 return Ok(());
             }
             TunnResult::Done => return Ok(()),
@@ -244,8 +240,7 @@ async fn send_handshake(tunnel: &mut Tunn, links: &mut LinkManager) -> VtrunkdRe
     let mut out_buf = vec![0u8; 2048];
     match tunnel.format_handshake_initiation(&mut out_buf, true) {
         TunnResult::WriteToNetwork(packet) => {
-            let payload = packet.to_vec();
-            links.send_packet(&payload).await?;
+            links.send_packet(packet).await?;
         }
         TunnResult::Done => {}
         TunnResult::Err(e) => {
