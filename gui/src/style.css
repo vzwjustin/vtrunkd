@@ -207,6 +207,7 @@ textarea {
 }
 
 button {
+  position: relative;
   border: none;
   border-radius: 999px;
   padding: 10px 18px;
@@ -318,4 +319,45 @@ button.danger {
   .row .grow {
     grid-column: span 1;
   }
+}
+
+/* Loading Spinner */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+button.loading {
+  color: transparent !important;
+  cursor: wait;
+}
+
+button.loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1em;
+  height: 1em;
+  margin-top: -0.5em;
+  margin-left: -0.5em;
+  border: 2px solid;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+button.primary.loading::after {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+}
+
+button.ghost.loading::after {
+  border-color: rgba(31, 110, 122, 0.3);
+  border-top-color: var(--teal);
+}
+
+button.danger.loading::after {
+  border-color: rgba(234, 107, 75, 0.3);
+  border-top-color: var(--coral);
 }
