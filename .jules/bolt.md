@@ -1,5 +1,3 @@
-## 2026-05-05 - Parallelized Health Pings and Broadcast
-
-**Learning:** Sequential awaits in a loop for network I/O operations create a bottleneck that scales linearly with the number of links and their latency. Using `tokio::task::JoinSet` allows these operations to run concurrently, reducing the total time from $O(\sum L_i)$ to $O(\max L_i)$.
-
-**Action:** Always check if independent asynchronous operations in a loop can be parallelized, especially for networking and health checks. Use `Arc` to share sockets and data across spawned tasks safely.
+## 2024-05-23 - [Zero-Copy Packet Processing]
+**Learning:** `vtrunkd` packet processing path allocated `Vec<u8>` for every packet due to `to_vec()` calls on `boringtun` results, which returns slices borrowing the output buffer. These allocations are unnecessary as `UdpSocket::send_to` accepts slices.
+**Action:** Always check if `to_vec()` is necessary when bridging libraries; prefer passing slices (references) in hot paths. In async contexts, ensure borrows don't cross await points conflictingly.

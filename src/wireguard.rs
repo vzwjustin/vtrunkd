@@ -147,8 +147,8 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
                 }
                 match tunnel.encapsulate(&tun_buf[..size], &mut out_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        let payload = packet.to_vec();
-                        links.send_packet(&payload).await?;
+                        // Pass slice directly to avoid allocation
+                        links.send_packet(packet).await?;
                     }
                     TunnResult::Done => {}
                     TunnResult::Err(e) => {
@@ -180,8 +180,7 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
             _ = wg_timer.tick() => {
                 match tunnel.update_timers(&mut out_buf) {
                     TunnResult::WriteToNetwork(packet) => {
-                        let payload = packet.to_vec();
-                        links.send_packet(&payload).await?;
+                        links.send_packet(packet).await?;
                     }
                     TunnResult::Done => {}
                     TunnResult::Err(e) => {
@@ -220,13 +219,12 @@ async fn handle_incoming(
     loop {
         match result {
             TunnResult::WriteToNetwork(buffer) => {
-                let payload = buffer.to_vec();
-                links.send_packet(&payload).await?;
+                // Pass slice directly to avoid allocation
+                links.send_packet(buffer).await?;
                 result = tunnel.decapsulate(None, &[], out_buf);
             }
             TunnResult::WriteToTunnelV4(buffer, _) | TunnResult::WriteToTunnelV6(buffer, _) => {
-                let payload = buffer.to_vec();
-                device.write_packet(&payload).await?;
+                device.write_packet(buffer).await?;
                 return Ok(());
             }
             TunnResult::Done => return Ok(()),
@@ -242,8 +240,7 @@ async fn send_handshake(tunnel: &mut Tunn, links: &mut LinkManager) -> VtrunkdRe
     let mut out_buf = vec![0u8; 2048];
     match tunnel.format_handshake_initiation(&mut out_buf, true) {
         TunnResult::WriteToNetwork(packet) => {
-            let payload = packet.to_vec();
-            links.send_packet(&payload).await?;
+            links.send_packet(packet).await?;
         }
         TunnResult::Done => {}
         TunnResult::Err(e) => {
@@ -730,8 +727,8 @@ impl LinkManager {
             Some(remote) => remote,
             None => return false,
         };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
+        // Use the socket directly without cloning the Arc to avoid atomic overhead
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
@@ -744,6 +741,27 @@ impl LinkManager {
             }
         }
     }
+
+    async fn send_probe(&mut self, index: usize, packet: &[u8], now: Instant) -> bool {
+        let remote = match self.links[index].remote {
+            Some(remote) => remote,
+            None => return false,
+        };
+        // Use the socket directly without cloning the Arc to avoid atomic overhead
+        let send_result = self.links[index].socket.send_to(packet, remote).await;
+        let link = &mut self.links[index];
+        match send_result {
+            Ok(_) => {
+                link.record_send_ok();
+                true
+            }
+            Err(err) => {
+                link.record_send_error(now, &err);
+                false
+            }
+        }
+    }
+
 
     fn advance_cursor(&mut self, len: usize) {
         self.next_index = (self.next_index + 1) % len;
