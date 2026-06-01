@@ -511,12 +511,33 @@ impl LinkManager {
 
     async fn send_health_pings(&mut self, epoch: Instant) -> VtrunkdResult<()> {
         let token = epoch.elapsed().as_millis() as u64;
-        let packet = build_control_packet(BOND_PING, token);
+        let packet = Arc::new(build_control_packet(BOND_PING, token));
         let now = Instant::now();
+        let mut set = tokio::task::JoinSet::new();
 
         for index in 0..self.links.len() {
-            if self.send_probe(index, &packet, now).await {
-                self.links[index].record_ping(now);
+            let remote = match self.links[index].remote {
+                Some(remote) => remote,
+                None => continue,
+            };
+            let socket = Arc::clone(&self.links[index].socket);
+            let p = Arc::clone(&packet);
+            set.spawn(async move {
+                let res = socket.send_to(&*p, remote).await;
+                (index, res)
+            });
+        }
+
+        while let Some(res) = set.join_next().await {
+            let (index, res) = res.map_err(|e| VtrunkdError::Network(e.to_string()))?;
+            match res {
+                Ok(_) => {
+                    self.links[index].record_send_ok();
+                    self.links[index].record_ping(now);
+                }
+                Err(err) => {
+                    self.links[index].record_send_error(now, &err);
+                }
             }
         }
 
@@ -538,7 +559,7 @@ impl LinkManager {
         match message_type {
             BOND_PING => {
                 let response = build_control_packet(BOND_PONG, token);
-                let _ = self.send_probe(link_index, &response, now).await;
+                let _ = self.send_to_link(link_index, &response, now).await;
             }
             BOND_PONG => {
                 if let Some(link) = self.links.get_mut(link_index) {
@@ -571,10 +592,33 @@ impl LinkManager {
 
     async fn send_all(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
         let now = Instant::now();
-        let mut sent = 0usize;
+        let mut set = tokio::task::JoinSet::new();
+        let packet_arc: Arc<[u8]> = Arc::from(packet);
+
         for index in 0..self.links.len() {
-            if self.send_to_link(index, packet, now).await {
-                sent += 1;
+            let remote = match self.links[index].remote {
+                Some(remote) => remote,
+                None => continue,
+            };
+            let socket = Arc::clone(&self.links[index].socket);
+            let p = Arc::clone(&packet_arc);
+            set.spawn(async move {
+                let res = socket.send_to(&p, remote).await;
+                (index, res)
+            });
+        }
+
+        let mut sent = 0usize;
+        while let Some(res) = set.join_next().await {
+            let (index, res) = res.map_err(|e| VtrunkdError::Network(e.to_string()))?;
+            match res {
+                Ok(_) => {
+                    self.links[index].record_send_ok();
+                    sent += 1;
+                }
+                Err(err) => {
+                    self.links[index].record_send_error(now, &err);
+                }
             }
         }
 
@@ -684,26 +728,6 @@ impl LinkManager {
     }
 
     async fn send_to_link(&mut self, index: usize, packet: &[u8], now: Instant) -> bool {
-        let remote = match self.links[index].remote {
-            Some(remote) => remote,
-            None => return false,
-        };
-        let socket = Arc::clone(&self.links[index].socket);
-        let send_result = socket.send_to(packet, remote).await;
-        let link = &mut self.links[index];
-        match send_result {
-            Ok(_) => {
-                link.record_send_ok();
-                true
-            }
-            Err(err) => {
-                link.record_send_error(now, &err);
-                false
-            }
-        }
-    }
-
-    async fn send_probe(&mut self, index: usize, packet: &[u8], now: Instant) -> bool {
         let remote = match self.links[index].remote {
             Some(remote) => remote,
             None => return false,
