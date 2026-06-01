@@ -78,13 +78,13 @@ struct ProvisionOptions {
     install_service: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct Config {
     network: NetworkConfig,
     wireguard: WireGuardConfig,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct NetworkConfig {
     mtu: u32,
     buffer_size: usize,
@@ -98,7 +98,7 @@ struct NetworkConfig {
     destination: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct WireGuardConfig {
     private_key: String,
     peer_public_key: String,
@@ -117,7 +117,7 @@ struct WireGuardConfig {
     links: Vec<WireGuardLinkConfig>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct WireGuardLinkConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -186,49 +186,40 @@ fn generate_configs(params: ConfigParams) -> Result<GeneratedConfigs, String> {
     let client_links = build_client_links(&params);
     let server_links = build_server_links(&params);
 
-    let client_config = Config {
-        network: NetworkConfig {
-            mtu: params.mtu,
-            buffer_size: params.buffer_size,
-            interface: Some(params.client_interface),
-            address: Some(params.client_address),
-            netmask: Some(params.netmask.clone()),
-            destination: None,
-        },
-        wireguard: WireGuardConfig {
-            private_key: client_private_key.clone(),
-            peer_public_key: server_public_key.clone(),
-            preshared_key: None,
-            persistent_keepalive: keepalive,
-            bonding_mode: Some(bonding_mode.clone()),
-            error_backoff_secs: Some(params.error_backoff_secs),
-            health_check_interval_ms: health_interval,
-            health_check_timeout_ms: health_timeout,
-            links: client_links,
-        },
-    };
-
-    let server_config = Config {
+    let base_config = Config {
         network: NetworkConfig {
             mtu: params.mtu,
             buffer_size: params.buffer_size,
             interface: None,
-            address: Some(params.server_address),
+            address: None,
             netmask: Some(params.netmask),
             destination: None,
         },
         wireguard: WireGuardConfig {
-            private_key: server_private_key.clone(),
-            peer_public_key: client_public_key.clone(),
+            private_key: String::new(),
+            peer_public_key: String::new(),
             preshared_key: None,
             persistent_keepalive: keepalive,
             bonding_mode: Some(bonding_mode),
             error_backoff_secs: Some(params.error_backoff_secs),
             health_check_interval_ms: health_interval,
             health_check_timeout_ms: health_timeout,
-            links: server_links,
+            links: Vec::new(),
         },
     };
+
+    let mut client_config = base_config.clone();
+    client_config.network.interface = Some(params.client_interface);
+    client_config.network.address = Some(params.client_address);
+    client_config.wireguard.private_key = client_private_key.clone();
+    client_config.wireguard.peer_public_key = server_public_key.clone();
+    client_config.wireguard.links = client_links;
+
+    let mut server_config = base_config;
+    server_config.network.address = Some(params.server_address);
+    server_config.wireguard.private_key = server_private_key.clone();
+    server_config.wireguard.peer_public_key = client_public_key.clone();
+    server_config.wireguard.links = server_links;
 
     let client_yaml = serde_yaml::to_string(&client_config).map_err(|e| e.to_string())?;
     let server_yaml = serde_yaml::to_string(&server_config).map_err(|e| e.to_string())?;
