@@ -163,7 +163,7 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
             packet = net_rx.recv() => {
                 let packet = match packet {
                     Some(packet) => packet,
-                    None => break,
+                    None => return Ok(()),
                 };
                 links.update_remote(packet.link_index, packet.src, Instant::now());
                 handle_incoming(
@@ -198,8 +198,6 @@ pub async fn run(config: Config) -> VtrunkdResult<()> {
             }
         }
     }
-
-    Ok(())
 }
 
 async fn handle_incoming(
