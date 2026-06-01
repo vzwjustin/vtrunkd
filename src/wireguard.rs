@@ -765,6 +765,15 @@ mod tests {
     }
 
     #[test]
+    fn decode_key_rejects_invalid_base64() {
+        let result = decode_key("test", "!!!");
+        assert!(matches!(
+            result,
+            Err(VtrunkdError::InvalidConfig(msg)) if msg.contains("Invalid base64")
+        ));
+    }
+
+    #[test]
     fn wg_packet_type_reads_le() {
         let mut packet = Vec::new();
         packet.extend_from_slice(&3u32.to_le_bytes());
