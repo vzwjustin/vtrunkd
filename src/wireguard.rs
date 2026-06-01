@@ -23,9 +23,6 @@ const BOND_PING: u8 = 1;
 const BOND_PONG: u8 = 2;
 const BOND_PACKET_LEN: usize = 13;
 const DEFAULT_ERROR_BACKOFF_SECS: u64 = 5;
-const DEFAULT_RTT_US: u64 = 100_000;
-const DEFAULT_BANDWIDTH_BYTES_PER_SEC: u64 = 125_000;
-const AGGREGATE_QUANTUM_BYTES: u64 = 1500;
 
 struct Link {
     name: String,
@@ -36,9 +33,6 @@ struct Link {
     last_rx: Option<Instant>,
     last_ping_sent: Option<Instant>,
     last_rtt_ms: Option<u64>,
-    tx_bytes: u64,
-    tx_packets: u64,
-    send_errors: u64,
 }
 
 struct LinkManager {
@@ -48,7 +42,6 @@ struct LinkManager {
     health_timeout: Option<Duration>,
     next_index: usize,
     remaining_weight: u32,
-    deficit_bytes: Vec<u64>,
 }
 
 struct NetPacket {
@@ -318,13 +311,8 @@ async fn setup_links(
             last_rx: None,
             last_ping_sent: None,
             last_rtt_ms: None,
-            tx_bytes: 0,
-            tx_packets: 0,
-            send_errors: 0,
         });
     }
-
-    let deficit_bytes = vec![0; links.len()];
 
     Ok((
         LinkManager {
@@ -334,7 +322,6 @@ async fn setup_links(
             health_timeout,
             next_index: 0,
             remaining_weight: 0,
-            deficit_bytes,
         },
         rx,
     ))
@@ -488,55 +475,17 @@ impl Link {
         self.last_rtt_ms = Some(rtt_ms);
     }
 
-    fn record_send_ok(&mut self, bytes: usize) {
-        self.tx_packets = self.tx_packets.saturating_add(1);
-        self.tx_bytes = self.tx_bytes.saturating_add(bytes as u64);
+    fn record_send_ok(&mut self) {
         if self.down_since.take().is_some() {
             info!("WireGuard {} recovered", self.name);
         }
     }
 
     fn record_send_error(&mut self, now: Instant, err: &std::io::Error) {
-        self.send_errors = self.send_errors.saturating_add(1);
         if self.down_since.is_none() {
             warn!("WireGuard {} marked down: {}", self.name, err);
         }
         self.down_since = Some(now);
-    }
-
-    fn rtt_us(&self) -> u64 {
-        self.last_rtt_ms
-            .map(|ms| ms.saturating_mul(1000))
-            .filter(|rtt| *rtt > 0)
-            .unwrap_or(DEFAULT_RTT_US)
-    }
-
-    fn delay_us(&self, one_way: bool) -> u64 {
-        let rtt = self.rtt_us();
-        if one_way {
-            (rtt / 2).max(1)
-        } else {
-            rtt
-        }
-    }
-
-    fn estimated_bandwidth(&self) -> u64 {
-        DEFAULT_BANDWIDTH_BYTES_PER_SEC.saturating_mul(self.weight.max(1) as u64)
-    }
-
-    fn completion_score_us(&self, packet_len: usize, one_way: bool) -> u64 {
-        let bandwidth = self.estimated_bandwidth().max(1);
-        let transmit_us = ((packet_len as u64).saturating_mul(1_000_000)) / bandwidth;
-        let mut score = self.delay_us(one_way).saturating_add(transmit_us);
-
-        if self.tx_packets > 100 && self.send_errors > 0 {
-            let loss_pct = (self.send_errors.saturating_mul(100) / self.tx_packets).min(49);
-            if loss_pct > 0 {
-                score = score.saturating_mul(100) / (100 - loss_pct);
-            }
-        }
-
-        score
     }
 }
 
@@ -578,7 +527,7 @@ impl LinkManager {
             let (index, res) = res.map_err(|e| VtrunkdError::Network(e.to_string()))?;
             match res {
                 Ok(_) => {
-                    self.links[index].record_send_ok(BOND_PACKET_LEN);
+                    self.links[index].record_send_ok();
                     self.links[index].record_ping(now);
                 }
                 Err(err) => {
@@ -628,14 +577,7 @@ impl LinkManager {
             Some(1..=3) => self.send_all(packet).await?,
             Some(4) if is_keepalive => self.send_all(packet).await?,
             _ => match self.mode {
-                BondingMode::Aggregate => self.send_aggregate(packet).await?,
-                BondingMode::RoundRobin => self.send_round_robin(packet).await?,
-                BondingMode::Weighted => self.send_weighted_round_robin(packet).await?,
-                BondingMode::MinRtt => self.send_min_rtt(packet).await?,
-                BondingMode::Blest => self.send_blest(packet).await?,
-                BondingMode::Ecf => self.send_ecf(packet, false).await?,
-                BondingMode::Owd => self.send_owd(packet).await?,
-                BondingMode::OwdEcf => self.send_ecf(packet, true).await?,
+                BondingMode::Aggregate => self.send_round_robin(packet).await?,
                 BondingMode::Redundant => self.send_all(packet).await?,
                 BondingMode::Failover => self.send_failover(packet).await?,
             },
@@ -666,7 +608,7 @@ impl LinkManager {
             let (index, res) = res.map_err(|e| VtrunkdError::Network(e.to_string()))?;
             match res {
                 Ok(_) => {
-                    self.links[index].record_send_ok(packet.len());
+                    self.links[index].record_send_ok();
                     sent += 1;
                 }
                 Err(err) => {
@@ -681,35 +623,7 @@ impl LinkManager {
         Ok(())
     }
 
-    async fn send_aggregate(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
-        let now = Instant::now();
-        if let Some(index) = self.next_aggregate_index(now, packet.len()) {
-            if self.send_to_link(index, packet, now).await {
-                return Ok(());
-            }
-        }
-
-        if !self.send_any(packet, now).await {
-            warn!("WireGuard has no remote endpoints to send to");
-        }
-        Ok(())
-    }
-
     async fn send_round_robin(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
-        let now = Instant::now();
-        if let Some(index) = self.next_round_robin_index(now) {
-            if self.send_to_link(index, packet, now).await {
-                return Ok(());
-            }
-        }
-
-        if !self.send_any(packet, now).await {
-            warn!("WireGuard has no remote endpoints to send to");
-        }
-        Ok(())
-    }
-
-    async fn send_weighted_round_robin(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
         let now = Instant::now();
         let len = self.links.len();
         if len == 0 {
@@ -734,52 +648,6 @@ impl LinkManager {
         Ok(())
     }
 
-    async fn send_min_rtt(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
-        let now = Instant::now();
-        if let Some(index) = self.best_min_rtt_index(now) {
-            if self.send_to_link(index, packet, now).await {
-                return Ok(());
-            }
-        }
-
-        if !self.send_any(packet, now).await {
-            warn!("WireGuard has no remote endpoints to send to");
-        }
-        Ok(())
-    }
-
-    async fn send_blest(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
-        let now = Instant::now();
-        if let Some(index) = self.best_blest_index(now, packet.len()) {
-            if self.send_to_link(index, packet, now).await {
-                return Ok(());
-            }
-        }
-
-        if !self.send_any(packet, now).await {
-            warn!("WireGuard has no remote endpoints to send to");
-        }
-        Ok(())
-    }
-
-    async fn send_ecf(&mut self, packet: &[u8], one_way: bool) -> VtrunkdResult<()> {
-        let now = Instant::now();
-        if let Some(index) = self.best_completion_index(now, packet.len(), one_way) {
-            if self.send_to_link(index, packet, now).await {
-                return Ok(());
-            }
-        }
-
-        if !self.send_any(packet, now).await {
-            warn!("WireGuard has no remote endpoints to send to");
-        }
-        Ok(())
-    }
-
-    async fn send_owd(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
-        self.send_ecf(packet, true).await
-    }
-
     async fn send_failover(&mut self, packet: &[u8]) -> VtrunkdResult<()> {
         let now = Instant::now();
         if let Some(index) = self.best_failover_index(now) {
@@ -792,62 +660,6 @@ impl LinkManager {
             warn!("WireGuard has no remote endpoints to send to");
         }
         Ok(())
-    }
-
-    fn next_aggregate_index(&mut self, now: Instant, packet_len: usize) -> Option<usize> {
-        if self.links.is_empty() {
-            return None;
-        }
-
-        if self.deficit_bytes.len() != self.links.len() {
-            self.deficit_bytes.resize(self.links.len(), 0);
-        }
-
-        let len = self.links.len();
-        let start = (self.next_index + 1) % len;
-        let quantum = AGGREGATE_QUANTUM_BYTES.max(packet_len as u64);
-        let mut best: Option<(usize, u64)> = None;
-
-        for round in 0..len {
-            let index = (start + round) % len;
-            let link = &mut self.links[index];
-            if link.weight == 0 || !link.is_available(now, self.error_backoff, self.health_timeout)
-            {
-                self.deficit_bytes[index] = 0;
-                continue;
-            }
-
-            let increment = quantum.saturating_mul(link.weight as u64);
-            self.deficit_bytes[index] = self.deficit_bytes[index].saturating_add(increment);
-            match best {
-                Some((_, best_deficit)) if best_deficit >= self.deficit_bytes[index] => {}
-                _ => best = Some((index, self.deficit_bytes[index])),
-            }
-        }
-
-        let (index, _) = best?;
-        let debit = (packet_len as u64).max(1);
-        self.deficit_bytes[index] = self.deficit_bytes[index].saturating_sub(debit);
-        self.next_index = index;
-        Some(index)
-    }
-
-    fn next_round_robin_index(&mut self, now: Instant) -> Option<usize> {
-        if self.links.is_empty() {
-            return None;
-        }
-
-        let len = self.links.len();
-        for _ in 0..len {
-            let index = self.next_index % len;
-            self.advance_cursor(len);
-            let link = &mut self.links[index];
-            if link.weight > 0 && link.is_available(now, self.error_backoff, self.health_timeout) {
-                return Some(index);
-            }
-        }
-
-        None
     }
 
     fn next_weighted_index(&mut self, now: Instant) -> Option<usize> {
@@ -886,75 +698,6 @@ impl LinkManager {
         None
     }
 
-    fn best_min_rtt_index(&mut self, now: Instant) -> Option<usize> {
-        self.links
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, link)| {
-                if link.weight > 0
-                    && link.is_available(now, self.error_backoff, self.health_timeout)
-                {
-                    Some((i, link))
-                } else {
-                    None
-                }
-            })
-            .min_by_key(|(_, link)| link.rtt_us())
-            .map(|(index, _)| index)
-    }
-
-    fn best_completion_index(
-        &mut self,
-        now: Instant,
-        packet_len: usize,
-        one_way: bool,
-    ) -> Option<usize> {
-        self.links
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, link)| {
-                if link.weight > 0
-                    && link.is_available(now, self.error_backoff, self.health_timeout)
-                {
-                    Some((i, link))
-                } else {
-                    None
-                }
-            })
-            .min_by_key(|(_, link)| link.completion_score_us(packet_len, one_way))
-            .map(|(index, _)| index)
-    }
-
-    fn best_blest_index(&mut self, now: Instant, packet_len: usize) -> Option<usize> {
-        let active_rtt = if self.links.is_empty() {
-            DEFAULT_RTT_US
-        } else {
-            self.links
-                .get(self.next_index % self.links.len())
-                .map(Link::rtt_us)
-                .unwrap_or(DEFAULT_RTT_US)
-        };
-
-        self.links
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, link)| {
-                if link.weight > 0
-                    && link.is_available(now, self.error_backoff, self.health_timeout)
-                {
-                    Some((i, link))
-                } else {
-                    None
-                }
-            })
-            .min_by_key(|(_, link)| {
-                let rtt = link.rtt_us();
-                let owd_diff = rtt.saturating_sub(active_rtt) / 2;
-                owd_diff.saturating_add(link.completion_score_us(packet_len, true))
-            })
-            .map(|(index, _)| index)
-    }
-
     fn best_failover_index(&mut self, now: Instant) -> Option<usize> {
         let mut best: Option<(usize, u32)> = None;
         for (index, link) in self.links.iter_mut().enumerate() {
@@ -989,7 +732,7 @@ impl LinkManager {
         let link = &mut self.links[index];
         match send_result {
             Ok(_) => {
-                link.record_send_ok(packet.len());
+                link.record_send_ok();
                 true
             }
             Err(err) => {
@@ -1087,9 +830,6 @@ mod tests {
             last_rx: None,
             last_ping_sent: Some(last_ping),
             last_rtt_ms: None,
-            tx_bytes: 0,
-            tx_packets: 0,
-            send_errors: 0,
         };
 
         let available =
@@ -1133,7 +873,6 @@ mod tests {
             health_timeout: None,
             next_index: 0,
             remaining_weight: 0,
-            deficit_bytes: Vec::new(),
         };
 
         let mut out_buf = vec![0u8; 256];
@@ -1158,72 +897,5 @@ mod tests {
         )
         .await;
         assert!(result.is_ok());
-    }
-
-    async fn test_link(index: usize, weight: u32, rtt_ms: u64) -> Link {
-        Link {
-            name: format!("link-{index}"),
-            socket: Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()),
-            remote: Some("127.0.0.1:12345".parse().unwrap()),
-            weight,
-            down_since: None,
-            last_rx: Some(Instant::now()),
-            last_ping_sent: None,
-            last_rtt_ms: Some(rtt_ms),
-            tx_bytes: 0,
-            tx_packets: 0,
-            send_errors: 0,
-        }
-    }
-
-    async fn test_manager(spec: &[(u32, u64)]) -> LinkManager {
-        let mut links = Vec::new();
-        for (index, (weight, rtt_ms)) in spec.iter().copied().enumerate() {
-            links.push(test_link(index, weight, rtt_ms).await);
-        }
-        LinkManager {
-            deficit_bytes: vec![0; links.len()],
-            links,
-            mode: BondingMode::Aggregate,
-            error_backoff: Duration::from_secs(1),
-            health_timeout: None,
-            next_index: 0,
-            remaining_weight: 0,
-        }
-    }
-
-    #[tokio::test]
-    async fn minrtt_scheduler_prefers_lowest_rtt() {
-        let mut links = test_manager(&[(1, 80), (1, 20), (1, 50)]).await;
-        assert_eq!(links.best_min_rtt_index(Instant::now()), Some(1));
-    }
-
-    #[tokio::test]
-    async fn ecf_scheduler_uses_weight_as_capacity_proxy() {
-        let mut links = test_manager(&[(1, 25), (4, 25)]).await;
-        assert_eq!(
-            links.best_completion_index(Instant::now(), 1500, false),
-            Some(1)
-        );
-    }
-
-    #[tokio::test]
-    async fn aggregate_scheduler_deficit_honors_weights() {
-        let mut links = test_manager(&[(1, 25), (3, 25)]).await;
-        let mut counts = [0usize; 2];
-        for _ in 0..8 {
-            let index = links
-                .next_aggregate_index(Instant::now(), 1500)
-                .expect("aggregate index");
-            counts[index] += 1;
-        }
-        assert!(counts[1] > counts[0], "counts={counts:?}");
-    }
-
-    #[tokio::test]
-    async fn round_robin_scheduler_ignores_weights() {
-        let mut links = test_manager(&[(10, 25), (1, 25)]).await;
-        assert_eq!(links.next_round_robin_index(Instant::now()), Some(0));
-        assert_eq!(links.next_round_robin_index(Instant::now()), Some(1));
     }
 }

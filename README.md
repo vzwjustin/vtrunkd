@@ -1,17 +1,15 @@
 # vtrunkd - WireGuard multi-link bonding daemon (Rust)
 
 vtrunkd is a Rust daemon that bonds multiple UDP paths into a single WireGuard tunnel
-for higher reliability and aggregate throughput. Kernel QUIC/TQUIC stays outside
-the daemon: run QUIC against the peer's tunnel address and let the OS route those
-packets through the bonded WireGuard interface.
+for higher reliability and aggregate throughput. Run kernel QUIC/TQUIC over the
+tunnel by connecting to the peer's tunnel IP; bonding stays in vtrunkd.
 
 ## Features
 
-- Multi-link bonding over UDP with TQUIC-derived aggregate, weighted, minrtt,
-  ECF, BLEST, OWD, redundant, and failover scheduler modes.
+- Multi-link bonding over UDP with aggregate/bonding, redundant, and failover modes.
 - Weighted path selection per link.
 - WireGuard tunnel implementation via boringtun.
-- Carries arbitrary routed IP traffic, including kernel QUIC/TQUIC sockets.
+- Carries routed IP traffic, including kernel QUIC/TQUIC sockets.
 - IPv4 and IPv6 endpoints with automatic default bind family selection.
 - Health checks over bonding sockets to detect dead links.
 - Strict YAML config validation to prevent invalid MTU/buffer/timeout settings.
@@ -46,7 +44,7 @@ wireguard:
   peer_public_key: "<base64>"
   preshared_key: null
   persistent_keepalive: 25
-  bonding_mode: "aggregate" # aggregate | roundrobin | weighted | minrtt | ecf | blest | owd | owd-ecf | redundant | failover
+  bonding_mode: "aggregate" # bonding | aggregate | redundant | failover
   error_backoff_secs: 5
   health_check_interval_ms: 1000
   health_check_timeout_ms: 5000
@@ -63,18 +61,14 @@ wireguard:
 
 If a link has an `endpoint`, vtrunkd will initiate the handshake on startup. If all
 endpoints are omitted, it waits for incoming traffic. `bonding_mode` controls how data
-is sent across links. TQUIC-compatible names are accepted: `aggregate`/`bonding`
-(deficit weighted round-robin), `roundrobin`, `weighted`/`wrr`, `minrtt`,
-`ecf`, `blest`, `owd`, `owd-ecf`, `redundant` (send on all), and `failover`
-(highest weight first).
-
-To route kernel QUIC through vtrunkd, bind or connect the QUIC socket to the
-remote tunnel IP, for example `10.10.0.1`. vtrunkd does not open `IPPROTO_TQUIC`
-sockets and does not call kernel `TQUIC_BOND_*` sockopts; bonding remains in
-userspace on the WireGuard links.
+is sent across links: `aggregate` (striped/weighted, sums bandwidth), `bonding` (alias
+for aggregate), `redundant` (send on all), or `failover` (highest weight first).
 
 Health checks are simple ping/pong messages over the bonding sockets to detect dead
 WANs even when the tunnel is idle. Both sides must run vtrunkd for this to work.
+
+For kernel QUIC, bind or connect the QUIC socket to the remote tunnel IP, for
+example `10.10.0.1`. vtrunkd does not manage QUIC sockets directly.
 
 ## Configuration notes
 
@@ -88,15 +82,7 @@ Both ends must run vtrunkd. It is not a drop-in peer for stock kernel WireGuard.
 
 ## Bonding mode guidance
 
-- aggregate/bonding: deficit weighted round-robin; best when RTTs are similar.
-- weighted/wrr: weighted round-robin using configured link weights.
-- roundrobin/rr: rotate across usable links without weight bias.
-- minrtt: prefer the path with the lowest measured health-check RTT.
-- ecf: pick the path with the lowest estimated completion time using RTT and
-  link weight as a capacity proxy.
-- blest: prefer paths with lower estimated blocking delay.
-- owd/owd-ecf: use RTT/2 as a one-way-delay approximation until explicit OWD
-  measurement frames exist in vtrunkd.
+- aggregate/bonding: stripe packets across links; best when RTTs are similar.
 - redundant: send on all links for reliability.
 - failover: highest weight link active; others standby.
 
