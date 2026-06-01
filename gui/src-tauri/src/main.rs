@@ -307,7 +307,99 @@ fn stop_vtrunkd(state: State<RunnerState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_remote_fingerprint(host: String, port: u16) -> Result<String, String> {
+    if host.trim().is_empty() || host.starts_with('-') {
+        return Err("Invalid host".to_string());
+    }
+    let output = Command::new("ssh-keyscan")
+        .arg("-p")
+        .arg(port.to_string())
+        .arg(&host)
+        .output()
+        .map_err(|e| format!("ssh-keyscan failed: {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(if err.trim().is_empty() {
+            "ssh-keyscan failed".to_string()
+        } else {
+            err.to_string()
+        });
+    }
+
+    if output.stdout.is_empty() {
+        return Err("No keys found for host. Ensure the host is reachable and SSH is running.".to_string());
+    }
+
+    let mut child = Command::new("ssh-keygen")
+        .arg("-lf")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("ssh-keygen failed: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(&output.stdout)
+            .map_err(|e| format!("Failed to write to ssh-keygen: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("ssh-keygen wait failed: {}", e))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[tauri::command]
+fn trust_host(app: AppHandle, host: String, port: u16) -> Result<(), String> {
+    if host.trim().is_empty() || host.starts_with('-') {
+        return Err("Invalid host".to_string());
+    }
+    let config_dir = app_config_dir(&app)?;
+    fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    let known_hosts_path = config_dir.join("known_hosts");
+
+    let output = Command::new("ssh-keyscan")
+        .arg("-p")
+        .arg(port.to_string())
+        .arg(&host)
+        .output()
+        .map_err(|e| format!("ssh-keyscan failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    if output.stdout.is_empty() {
+        return Err("No keys found to trust".to_string());
+    }
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(known_hosts_path)
+        .map_err(|e| format!("Failed to open known_hosts: {}", e))?;
+
+    // Ensure there's a trailing newline in the output to avoid corrupting the file if it's missing one.
+    let mut keys = output.stdout;
+    if !keys.is_empty() && !keys.ends_with(b"\n") {
+        keys.push(b'\n');
+    }
+
+    file.write_all(&keys)
+        .map_err(|e| format!("Failed to write to known_hosts: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn provision_vps(
+    app: AppHandle,
     ssh: SshConfig,
     options: ProvisionOptions,
     server_yaml: String,
@@ -331,13 +423,18 @@ fn provision_vps(
     let script = build_provision_script(&config_b64, &options);
 
     let target = format!("{}@{}", user, ssh.host);
+    let config_dir = app_config_dir(&app)?;
+    let known_hosts_path = config_dir.join("known_hosts");
+
     let mut cmd = Command::new("ssh");
     cmd.arg("-p")
         .arg(ssh.port.to_string())
         .arg("-o")
         .arg("BatchMode=yes")
         .arg("-o")
-        .arg("StrictHostKeyChecking=accept-new")
+        .arg("StrictHostKeyChecking=yes")
+        .arg("-o")
+        .arg(format!("UserKnownHostsFile={}", known_hosts_path.to_string_lossy()))
         .arg("-o")
         .arg("ConnectTimeout=10");
 
@@ -583,7 +680,9 @@ fn main() {
             write_config,
             start_vtrunkd,
             stop_vtrunkd,
-            provision_vps
+            provision_vps,
+            get_remote_fingerprint,
+            trust_host
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -12,6 +12,8 @@ const runStatusEl = document.getElementById('run-status');
 const tunnelModeEl = document.getElementById('tunnel-mode');
 const linkCountEl = document.getElementById('link-count');
 const serverHostDisplayEl = document.getElementById('server-host-display');
+const sshFingerprintEl = document.getElementById('ssh-fingerprint');
+const trustHostBtn = document.getElementById('trust-host');
 
 let links = [
   { name: 'wifi', bind: '', weight: 1 },
@@ -114,6 +116,41 @@ async function generateConfigs() {
     appendLog('Configs generated.');
   } catch (err) {
     appendLog(`Error: ${err}`);
+  }
+}
+
+async function verifyHost() {
+  const host = readText('server-host');
+  const port = readNumber('ssh-port') || 22;
+  if (!host) {
+    appendLog('Error: VPS host is required for verification.');
+    return;
+  }
+  appendLog(`Fetching fingerprint for ${host}:${port}...`);
+  sshFingerprintEl.textContent = 'Fetching...';
+  try {
+    const fingerprint = await invoke('get_remote_fingerprint', { host, port });
+    sshFingerprintEl.textContent = fingerprint;
+    trustHostBtn.disabled = false;
+    appendLog('Fingerprint fetched. Please verify it before trusting.');
+  } catch (err) {
+    sshFingerprintEl.textContent = 'Error fetching fingerprint.';
+    trustHostBtn.disabled = true;
+    appendLog(`Verification failed: ${err}`);
+  }
+}
+
+async function trustHost() {
+  const host = readText('server-host');
+  const port = readNumber('ssh-port') || 22;
+  appendLog(`Adding ${host} to known_hosts...`);
+  try {
+    await invoke('trust_host', { host, port });
+    appendLog(`${host} trusted.`);
+    trustHostBtn.disabled = true;
+    trustHostBtn.textContent = 'Trusted';
+  } catch (err) {
+    appendLog(`Failed to trust host: ${err}`);
   }
 }
 
@@ -226,6 +263,8 @@ listen('vtrunkd-exit', (event) => {
 
 document.getElementById('generate').addEventListener('click', generateConfigs);
 document.getElementById('provision').addEventListener('click', provisionVps);
+document.getElementById('verify-host').addEventListener('click', verifyHost);
+document.getElementById('trust-host').addEventListener('click', trustHost);
 document.getElementById('start').addEventListener('click', startTunnel);
 document.getElementById('stop').addEventListener('click', stopTunnel);
 document.getElementById('add-link').addEventListener('click', () => {
