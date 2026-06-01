@@ -166,6 +166,16 @@
             <label>SSH user</label>
             <input id="ssh-user" placeholder="ubuntu" />
           </div>
+          <div class="divider"></div>
+          <div class="field">
+            <label>Host verification</label>
+            <div class="toolbar">
+              <button id="verify-host" class="ghost">Fetch Fingerprint</button>
+              <button id="trust-host" class="ghost" disabled>Trust Host</button>
+            </div>
+            <pre id="ssh-fingerprint" class="log" style="height: auto; min-height: 3em; margin-top: 0.5rem; font-size: 0.8rem;">No fingerprint fetched yet.</pre>
+          </div>
+          <div class="divider"></div>
           <div class="row">
             <div class="field">
               <label>SSH port</label>
