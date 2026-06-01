@@ -138,9 +138,7 @@ fn daemonize() -> VtrunkdResult<()> {
 
             // Redirect to /dev/null
             let dev_null_in = File::open("/dev/null")?;
-            let dev_null_out = std::fs::OpenOptions::new()
-                .write(true)
-                .open("/dev/null")?;
+            let dev_null_out = std::fs::OpenOptions::new().write(true).open("/dev/null")?;
 
             let _ = nix::unistd::dup2(dev_null_in.as_raw_fd(), 0)?;
             let _ = nix::unistd::dup2(dev_null_out.as_raw_fd(), 1)?;

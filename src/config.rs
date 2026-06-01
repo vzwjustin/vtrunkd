@@ -52,6 +52,17 @@ pub enum BondingMode {
     #[default]
     #[serde(alias = "bonding", alias = "bonded")]
     Aggregate,
+    #[serde(alias = "rr")]
+    RoundRobin,
+    #[serde(alias = "wrr")]
+    Weighted,
+    #[serde(rename = "minrtt", alias = "min-rtt")]
+    MinRtt,
+    Blest,
+    Ecf,
+    Owd,
+    #[serde(rename = "owd-ecf", alias = "owdecf")]
+    OwdEcf,
     Redundant,
     Failover,
 }
@@ -214,6 +225,18 @@ mod tests {
 
         let redundant: BondingMode = serde_yaml::from_str("redundant").unwrap();
         assert_eq!(redundant, BondingMode::Redundant);
+
+        let round_robin: BondingMode = serde_yaml::from_str("rr").unwrap();
+        assert_eq!(round_robin, BondingMode::RoundRobin);
+
+        let weighted: BondingMode = serde_yaml::from_str("wrr").unwrap();
+        assert_eq!(weighted, BondingMode::Weighted);
+
+        let minrtt: BondingMode = serde_yaml::from_str("minrtt").unwrap();
+        assert_eq!(minrtt, BondingMode::MinRtt);
+
+        let owd_ecf: BondingMode = serde_yaml::from_str("owd-ecf").unwrap();
+        assert_eq!(owd_ecf, BondingMode::OwdEcf);
     }
 
     #[test]
